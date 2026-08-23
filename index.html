@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BioSentinel-OS | Live AI & Barcode Scanner</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons CDN -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+        .font-mono { font-family: 'JetBrains Mono', monospace; }
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(14px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        .pulse-red {
+            animation: pulseRed 1.5s infinite;
+        }
+        @keyframes pulseRed {
+            0%, 100% { box-shadow: 0 0 15px rgba(239, 68, 68, 0.5); }
+            50% { box-shadow: 0 0 35px rgba(239, 68, 68, 0.85); }
+        }
+        .pulse-green {
+            animation: pulseGreen 2s infinite;
+        }
+        @keyframes pulseGreen {
+            0%, 100% { box-shadow: 0 0 15px rgba(16, 185, 129, 0.4); }
+            50% { box-shadow: 0 0 25px rgba(16, 185, 129, 0.7); }
+        }
+        .scan-line {
+            animation: scanLine 2s linear infinite;
+        }
+        @keyframes scanLine {
+            0% { top: 0%; }
+            50% { top: 95%; }
+            100% { top: 0%; }
+        }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col antialiased selection:bg-cyan-500 selection:text-black">
+
+    <!-- Top Navigation Header -->
+    <header class="border-b border-slate-800/80 bg-slate-900/90 backdrop-blur sticky top-0 z-50 px-6 py-3.5 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center shadow-lg shadow-cyan-500/20">
+                <i data-lucide="smartphone" class="w-6 h-6 text-slate-950"></i>
+            </div>
+            <div>
+                <div class="flex items-center gap-2">
+                    <h1 class="font-bold text-lg tracking-tight bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent">BioSentinel-OS</h1>
+                    <span class="text-[10px] font-semibold uppercase tracking-widest px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">Live Camera & AI Scanner Active</span>
+                </div>
+                <p class="text-xs text-slate-400">Software-Defined Biomedical Waste Intelligence & CPCB Regulatory Engine</p>
+            </div>
+        </div>
+
+        <div class="flex items-center gap-4">
+            <div class="flex items-center gap-2 bg-slate-800/60 px-3 py-1.5 rounded-lg border border-slate-700/50 text-xs">
+                <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+                <span class="text-slate-300 font-medium">Scanner Mode: <span class="text-white font-mono text-cyan-400">Live Device Camera / File Upload</span></span>
+            </div>
+            <div class="flex items-center gap-2 bg-emerald-500/10 px-3 py-1.5 rounded-lg border border-emerald-500/20 text-xs text-emerald-400">
+                <i data-lucide="check-circle-2" class="w-4 h-4"></i>
+                <span class="font-semibold">CPCB 2016 Compliant</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content Grid -->
+    <main class="flex-1 p-6 grid grid-cols-12 gap-6 max-w-[1800px] w-full mx-auto">
+        
+        <!-- Left Column: Scanner Source Controls & Pre-set Judge Scenarios -->
+        <aside class="col-span-12 lg:col-span-4 flex flex-col gap-6">
+            
+            <!-- Scanner Source Selector Panel -->
+            <div class="glass-panel rounded-2xl p-5 border border-slate-800">
+                <h2 class="font-semibold text-sm uppercase tracking-wider text-slate-300 mb-3 flex items-center gap-2">
+                    <i data-lucide="scan-line" class="w-4 h-4 text-cyan-400"></i>
+                    Select Live Scanner Input Source
+                </h2>
+                
+                <div class="grid grid-cols-2 gap-3 mb-4">
+                    <button onclick="startLiveCamera()" class="p-3 rounded-xl border border-cyan-500/40 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 font-semibold text-xs transition flex items-center justify-center gap-2">
+                        <i data-lucide="camera" class="w-4 h-4"></i>
+                        Live Webcam Camera
+                    </button>
+                    <label class="p-3 rounded-xl border border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs cursor-pointer transition flex items-center justify-center gap-2 text-center">
+                        <i data-lucide="upload" class="w-4 h-4"></i>
+                        Upload Image
+                        <input type="file" id="image-upload-input" accept="image/*" class="hidden" onchange="handleFileUpload(event)">
+                    </label>
+                </div>
+            </div>
+
+            <!-- SIH Judge Pre-Set Test Scenarios -->
+            <div class="glass-panel rounded-2xl p-5 border border-slate-800">
+                <div class="flex items-center justify-between mb-3">
+                    <h2 class="font-semibold text-sm uppercase tracking-wider text-slate-300 flex items-center gap-2">
+                        <i data-lucide="flask-conical" class="w-4 h-4 text-amber-400"></i>
+                        SIH Judge Quick Test Suite
+                    </h2>
+                    <span class="text-[10px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded font-mono">1-Click Test</span>
+                </div>
+                <p class="text-xs text-slate-400 mb-3">Test synthetic hospital hazard cases instantly without physical waste bags:</p>
+
+                <div class="grid grid-cols-1 gap-2.5">
+                    <button onclick="loadScenario('yellow')" class="p-3 rounded-xl border border-amber-500/20 bg-amber-500/5 hover:bg-amber-500/10 text-left transition flex items-center justify-between">
+                        <div class="flex items-center gap-3">
+                            <div class="w-8 h-8 rounded-lg bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 font-bold text-xs">Y1</div>
+                            <div>
+                                <h3 class="text-xs font-semibold text-amber-300">Yellow Bag Soiled Waste</h3>
+                                <p class="text-[11px] text-slate-400">Anatomical Tissue • Auto-Approved</p>
+                            </div>
+                        </div>
+                        <i data-lucide="chevron-right" class="w-4 h-4 text-amber-400"></i>
+                    </button>
+
+                    <button onclick="loadScenario('red')" class="p-3 rounded-xl border border-red-500/20 bg-red-500/5 hover:bg-red-500/10 text-left transition flex items-center justify-between">
+                        <div class="flex items-center gap-3">
+                            <div class="w-8 h-8 rounded-lg bg-red-500/20 border border-red-500/40 flex items-center justify-center text-red-400 font-bold text-xs">R1</div>
+                            <div>
+                                <h3 class="text-xs font-semibold text-red-300">Red Bag Recyclable Plastics</h3>
+                                <p class="text-[11px] text-slate-400">Plastic IV Set • Recyclable</p>
+                            </div>
+                        </div>
+                        <i data-lucide="chevron-right" class="w-4 h-4 text-red-400"></i>
+                    </button>
+
+                    <button onclick="loadScenario('hazard')" class="p-3 rounded-xl border border-rose-500/40 bg-rose-500/10 hover:bg-rose-500/20 text-left transition flex items-center justify-between ring-1 ring-rose-500/30">
+                        <div class="flex items-center gap-3">
+                            <div class="w-8 h-8 rounded-lg bg-rose-500/30 border border-rose-500/60 flex items-center justify-center text-rose-300 font-bold text-xs">
+                                <i data-lucide="alert-triangle" class="w-4 h-4"></i>
+                            </div>
+                            <div>
+                                <h3 class="text-xs font-semibold text-rose-300">Needle Syringe in Red Plastic Bag</h3>
+                                <p class="text-[11px] text-rose-200/70">CRITICAL HAZARD • Triggers Shift Lockout</p>
+                            </div>
+                        </div>
+                        <i data-lucide="lock" class="w-4 h-4 text-rose-400"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- OCR Barcode Status -->
+            <div class="glass-panel rounded-2xl p-5 border border-slate-800 flex-1 flex flex-col justify-between">
+                <div>
+                    <h2 class="font-semibold text-sm uppercase tracking-wider text-slate-300 mb-3 flex items-center gap-2">
+                        <i data-lucide="qr-code" class="w-4 h-4 text-cyan-400"></i>
+                        OCR Scanned Barcode String
+                    </h2>
+                    <div class="bg-slate-900 border border-slate-800 rounded-xl p-3.5 flex items-center justify-between mb-3">
+                        <div class="flex items-center gap-3">
+                            <i data-lucide="barcode" class="w-6 h-6 text-slate-400"></i>
+                            <div>
+                                <p class="text-[10px] text-slate-500 uppercase tracking-widest">CPCB Unique Bag Barcode</p>
+                                <p id="barcode-display" class="font-mono text-sm font-bold text-cyan-400">CPCB-IND-2026-90821-YEL</p>
+                            </div>
+                        </div>
+                        <span id="barcode-status-badge" class="text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded font-semibold">VALID FORMAT</span>
+                    </div>
+                </div>
+                <div class="pt-4 border-t border-slate-800/80 flex items-center justify-between text-xs text-slate-400">
+                    <span>Ward ID: <strong class="text-slate-200">ICU Ward 3</strong></span>
+                    <span>Operator: <strong class="text-slate-200">Staff #412</strong></span>
+                </div>
+            </div>
+
+        </aside>
+
+        <!-- Center Column: Smartphone Camera Live Scanner Viewport -->
+        <section class="col-span-12 lg:col-span-5 flex flex-col gap-6">
+            
+            <!-- Live Camera Viewport Container -->
+            <div class="glass-panel rounded-2xl p-5 border border-slate-800 relative overflow-hidden flex-1 flex flex-col">
+                <div class="flex items-center justify-between mb-3">
+                    <h2 class="font-semibold text-sm uppercase tracking-wider text-slate-300 flex items-center gap-2">
+                        <i data-lucide="camera" class="w-4 h-4 text-cyan-400"></i>
+                        Live Camera AI Scanner Viewport
+                    </h2>
+                    <span id="camera-status-pill" class="text-[10px] font-mono px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">READY TO SCAN</span>
+                </div>
+
+                <!-- Video Element & Scanner Frame -->
+                <div class="relative flex-1 bg-slate-900 rounded-xl border border-slate-800 overflow-hidden flex items-center justify-center min-h-[320px]">
+                    
+                    <!-- Live HTML5 Webcam Video Element -->
+                    <video id="webcam-video" autoplay playsinline class="hidden absolute inset-0 w-full h-full object-cover"></video>
+                    
+                    <!-- Uploaded Image Display Element -->
+                    <img id="uploaded-image" class="hidden absolute inset-0 w-full h-full object-cover">
+
+                    <!-- Default Placeholder Viewport -->
+                    <div id="camera-placeholder" class="text-center p-6 bg-slate-950/85 backdrop-blur rounded-2xl border border-slate-800 max-w-xs shadow-2xl z-10">
+                        <div id="sim-icon-container" class="w-16 h-16 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-400 mx-auto flex items-center justify-center mb-3">
+                            <i data-lucide="camera" class="w-8 h-8"></i>
+                        </div>
+                        <h3 id="sim-item-title" class="font-bold text-sm text-slate-100 mb-1">Live Camera Ready</h3>
+                        <p id="sim-item-desc" class="text-xs text-slate-400 mb-3">Click 'Live Webcam' or 'Upload Image' to scan</p>
+                        
+                        <div class="flex items-center justify-center gap-2 text-[10px] font-mono">
+                            <span class="bg-slate-800 text-slate-300 px-2 py-1 rounded border border-slate-700">Mass: <span id="pill-mass" class="text-emerald-400 font-bold">450g</span></span>
+                            <span class="bg-slate-800 text-slate-300 px-2 py-1 rounded border border-slate-700">Vol: <span id="pill-vol" class="text-cyan-400 font-bold">530cm³</span></span>
+                        </div>
+                    </div>
+
+                    <!-- Scanning Laser Overlay Line -->
+                    <div id="scan-laser" class="hidden absolute left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-cyan-400 to-transparent scan-line shadow-lg shadow-cyan-400/50 z-20"></div>
+
+                    <!-- Digital Lockout Status Overlay -->
+                    <div id="digital-lockout-overlay" class="absolute bottom-4 left-4 right-4 bg-emerald-950/90 border border-emerald-500/40 text-emerald-300 px-4 py-2.5 rounded-xl flex items-center justify-between transition-all duration-300 z-30">
+                        <div class="flex items-center gap-2">
+                            <div class="w-3 h-3 rounded-full bg-emerald-400 animate-pulse"></div>
+                            <span class="text-xs font-semibold">Shift Status: <span id="lock-state-text" class="text-emerald-300 uppercase font-mono">SCANNER READY</span></span>
+                        </div>
+                        <i data-lucide="check-circle" id="lock-icon" class="w-4 h-4 text-emerald-400"></i>
+                    </div>
+                </div>
+
+                <!-- Live Trigger Buttons -->
+                <div class="mt-4 flex gap-3">
+                    <button onclick="snapAndAnalyze()" class="flex-1 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-bold text-xs py-3 px-4 rounded-xl shadow-lg shadow-cyan-500/20 transition flex items-center justify-center gap-2">
+                        <i data-lucide="aperture" class="w-4 h-4 fill-slate-950"></i>
+                        📸 SNAP & EXECUTE AI SCAN
+                    </button>
+                    <button onclick="stopCamera()" class="bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs py-3 px-4 rounded-xl border border-slate-700 transition">
+                        Stop Camera
+                    </button>
+                </div>
+            </div>
+
+            <!-- Sensor Telemetry Metrics -->
+            <div class="grid grid-cols-4 gap-3">
+                <div class="glass-panel p-3.5 rounded-xl border border-slate-800">
+                    <p class="text-[10px] text-slate-400 uppercase tracking-wider mb-1">Mass Density</p>
+                    <p id="metric-density" class="font-mono text-sm font-bold text-emerald-400">0.85 g/cm³</p>
+                    <span class="text-[9px] text-slate-500">IMU Noise-Filtered</span>
+                </div>
+                <div class="glass-panel p-3.5 rounded-xl border border-slate-800">
+                    <p class="text-[10px] text-slate-400 uppercase tracking-wider mb-1">Optical Features</p>
+                    <p id="metric-features" class="font-mono text-sm font-bold text-amber-400">128-d Vector</p>
+                    <span class="text-[9px] text-slate-500">MobileNetV4 CNN</span>
+                </div>
+                <div class="glass-panel p-3.5 rounded-xl border border-slate-800">
+                    <p class="text-[10px] text-slate-400 uppercase tracking-wider mb-1">Acoustic Mic</p>
+                    <p id="metric-acoustic" class="font-mono text-sm font-bold text-purple-400">SOLID MAT</p>
+                    <span class="text-[9px] text-slate-500">Audio Resonance</span>
+                </div>
+                <div class="glass-panel p-3.5 rounded-xl border border-slate-800">
+                    <p class="text-[10px] text-slate-400 uppercase tracking-wider mb-1">CPCB Fraud Risk</p>
+                    <p id="metric-fraud" class="font-mono text-sm font-bold text-slate-400">LOW (0.02)</p>
+                    <span class="text-[9px] text-slate-500">Cross-Check Engine</span>
+                </div>
+            </div>
+
+        </section>
+
+        <!-- Right Column: Conformal AI Engine Outcome & CPCB Manifest Export -->
+        <aside class="col-span-12 lg:col-span-3 flex flex-col gap-6">
+            
+            <!-- Conformal Risk Control & AI Abstention Engine -->
+            <div class="glass-panel rounded-2xl p-5 border border-slate-800 flex-1 flex flex-col justify-between">
+                <div>
+                    <div class="flex items-center justify-between mb-3">
+                        <h2 class="font-semibold text-sm uppercase tracking-wider text-slate-300 flex items-center gap-2">
+                            <i data-lucide="brain-circuit" class="w-4 h-4 text-cyan-400"></i>
+                            Conformal AI Abstention Engine
+                        </h2>
+                        <span class="text-[9px] bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 px-1.5 py-0.5 rounded font-mono">ONNX Edge</span>
+                    </div>
+
+                    <!-- Entropy Gauge -->
+                    <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 mb-4 text-center">
+                        <p class="text-[10px] text-slate-400 uppercase tracking-widest mb-1">Softmax Uncertainty Entropy H(x)</p>
+                        <div class="flex items-baseline justify-center gap-2 mb-2">
+                            <span id="entropy-value" class="font-mono text-3xl font-extrabold text-emerald-400">0.18</span>
+                            <span class="text-xs text-slate-500 font-mono">/ Threshold τ=0.42</span>
+                        </div>
+
+                        <div class="w-full bg-slate-800 h-2 rounded-full overflow-hidden mb-2">
+                            <div id="entropy-bar" class="bg-emerald-400 h-full transition-all duration-500" style="width: 28%"></div>
+                        </div>
+
+                        <p id="entropy-evaluation" class="text-[11px] text-emerald-400 font-medium">Model Entropy Low • High Confidence Accept</p>
+                    </div>
+
+                    <!-- Decision Outcome Badge -->
+                    <div id="decision-badge" class="p-4 rounded-xl border border-emerald-500/40 bg-emerald-500/10 text-center transition-all duration-300">
+                        <p class="text-[10px] uppercase tracking-widest text-emerald-300 font-semibold mb-1">AI Verified Category</p>
+                        <h3 id="decision-category" class="font-mono text-xl font-bold text-emerald-400">YELLOW (INCINERATION)</h3>
+                        <p id="decision-conf" class="text-xs text-emerald-300/80 mt-1">Classification Confidence: 96.4%</p>
+                    </div>
+                </div>
+
+                <!-- Human-in-the-Loop Protocol Prompt -->
+                <div id="hitl-prompt" class="hidden mt-4 p-3.5 rounded-xl border border-rose-500/40 bg-rose-500/10 text-rose-300 text-xs">
+                    <div class="flex items-center gap-2 font-bold mb-1 text-rose-200">
+                        <i data-lucide="user-check" class="w-4 h-4"></i>
+                        SOFTWARE SHIFT LOCKOUT ACTIVE
+                    </div>
+                    <p class="text-[11px] text-rose-300/90 mb-2">AI abstained due to high entropy. Complete manual verification to unlock log.</p>
+                    <div class="flex gap-2">
+                        <button onclick="overrideLog('SHARPS')" class="flex-1 bg-rose-500 text-slate-950 font-bold py-1.5 rounded text-[11px] hover:bg-rose-400 transition">Flag Sharps</button>
+                        <button onclick="overrideLog('VERIFIED')" class="flex-1 bg-slate-800 text-slate-200 font-semibold py-1.5 rounded text-[11px] hover:bg-slate-700 transition">Manual Confirm</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Download CPCB Manifest Button -->
+            <div class="glass-panel p-4 rounded-2xl border border-slate-800">
+                <button onclick="downloadManifest()" class="w-full bg-slate-800 hover:bg-slate-700 text-cyan-300 font-bold text-xs py-2.5 px-4 rounded-xl border border-cyan-500/30 flex items-center justify-center gap-2 transition">
+                    <i data-lucide="file-text" class="w-4 h-4 text-cyan-400"></i>
+                    GENERATE CPCB DIGITAL MANIFEST (JSON)
+                </button>
+            </div>
+
+        </aside>
+
+    </main>
+
+    <!-- JavaScript Logic -->
+    <script>
+        lucide.createIcons();
+
+        let currentScenario = 'yellow';
+        let mediaStream = null;
+
+        const scenarios = {
+            yellow: {
+                title: 'Yellow Bagged Soiled Waste',
+                desc: 'Anatomical tissue • Auto-Approved',
+                barcode: 'CPCB-IND-2026-90821-YEL',
+                mass: 450, vol: 530, density: '0.85', features: '128-d Vector', acoustic: 'SOLID MAT', fraud: 'LOW (0.02)',
+                entropy: 0.18, category: 'YELLOW (INCINERATION)', conf: '96.4%', abstain: false
+            },
+            red: {
+                title: 'Red Bagged Recyclable Plastics',
+                desc: 'Polymer IV tubing & catheters',
+                barcode: 'CPCB-IND-2026-90822-RED',
+                mass: 180, vol: 820, density: '0.22', features: '128-d Vector', acoustic: 'HOLLOW PLASTIC', fraud: 'LOW (0.01)',
+                entropy: 0.12, category: 'RED (AUTOCLAVE/RECYCLE)', conf: '98.1%', abstain: false
+            },
+            hazard: {
+                title: 'Needle Syringe inside Red Plastic Bag',
+                desc: 'CRITICAL HAZARD: Metallic needle inside flexible plastic bag',
+                barcode: 'CPCB-IND-2026-90823-ERR',
+                mass: 320, vol: 410, density: '0.78', features: 'AMBIGUOUS HAZARD', acoustic: 'METALLIC SHARP', fraud: 'HIGH (0.89)',
+                entropy: 0.68, category: 'AI ABSTAIN (HAZARD FLAGGED)', conf: '42.0% (HIGH ENTROPY)', abstain: true
+            }
+        };
+
+        // Live WebRTC Webcam Access
+        async function startLiveCamera() {
+            try {
+                const video = document.getElementById('webcam-video');
+                const img = document.getElementById('uploaded-image');
+                const placeholder = document.getElementById('camera-placeholder');
+
+                mediaStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+                video.srcObject = mediaStream;
+                
+                video.classList.remove('hidden');
+                img.classList.add('hidden');
+                placeholder.classList.add('hidden');
+
+                document.getElementById('camera-status-pill').innerText = 'LIVE WEBCAM STREAMING';
+                document.getElementById('scan-laser').classList.remove('hidden');
+            } catch (err) {
+                alert('Unable to access webcam: ' + err.message + '\nTry uploading an image file instead!');
+            }
+        }
+
+        function stopCamera() {
+            if (mediaStream) {
+                mediaStream.getTracks().forEach(track => track.stop());
+                mediaStream = null;
+            }
+            document.getElementById('webcam-video').classList.add('hidden');
+            document.getElementById('uploaded-image').classList.add('hidden');
+            document.getElementById('camera-placeholder').classList.remove('hidden');
+            document.getElementById('scan-laser').classList.add('hidden');
+            document.getElementById('camera-status-pill').innerText = 'CAMERA STOPPED';
+        }
+
+        // Handle File Upload Scanner
+        function handleFileUpload(event) {
+            const file = event.target.files[0];
+            if (file) {
+                stopCamera();
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const img = document.getElementById('uploaded-image');
+                    img.src = e.target.result;
+                    img.classList.remove('hidden');
+                    document.getElementById('camera-placeholder').classList.add('hidden');
+                    document.getElementById('camera-status-pill').innerText = 'FILE LOADED: ' + file.name;
+                    document.getElementById('scan-laser').classList.remove('hidden');
+                };
+                reader.readAsDataURL(file);
+            }
+        }
+
+        function snapAndAnalyze() {
+            // Trigger Scan Laser Animation
+            const laser = document.getElementById('scan-laser');
+            laser.classList.remove('hidden');
+
+            setTimeout(() => {
+                runInference();
+            }, 600);
+        }
+
+        function loadScenario(type) {
+            currentScenario = type;
+            const data = scenarios[type];
+
+            document.getElementById('barcode-display').innerText = data.barcode;
+            document.getElementById('sim-item-title').innerText = data.title;
+            document.getElementById('sim-item-desc').innerText = data.desc;
+            
+            document.getElementById('pill-mass').innerText = data.mass + 'g';
+            document.getElementById('pill-vol').innerText = data.vol + 'cm³';
+
+            document.getElementById('metric-density').innerText = data.density + ' g/cm³';
+            document.getElementById('metric-features').innerText = data.features;
+            document.getElementById('metric-acoustic').innerText = data.acoustic;
+            document.getElementById('metric-fraud').innerText = data.fraud;
+
+            runInference();
+        }
+
+        function runInference() {
+            const data = scenarios[currentScenario];
+            
+            document.getElementById('entropy-value').innerText = data.entropy.toFixed(2);
+            const entropyPct = Math.min(100, (data.entropy / 0.8) * 100);
+            const entropyBar = document.getElementById('entropy-bar');
+            entropyBar.style.width = entropyPct + '%';
+
+            if (data.abstain) {
+                entropyBar.className = 'bg-rose-500 h-full transition-all duration-500';
+                document.getElementById('entropy-value').className = 'font-mono text-3xl font-extrabold text-rose-500';
+                document.getElementById('entropy-evaluation').innerText = 'Model Entropy High (H >= 0.42) • Shift Lockout Active!';
+                document.getElementById('entropy-evaluation').className = 'text-[11px] text-rose-400 font-medium';
+
+                const badge = document.getElementById('decision-badge');
+                badge.className = 'p-4 rounded-xl border border-rose-500/60 bg-rose-500/20 text-center pulse-red transition-all duration-300';
+                document.getElementById('decision-category').innerText = data.category;
+                document.getElementById('decision-category').className = 'font-mono text-lg font-bold text-rose-300';
+                document.getElementById('decision-conf').innerText = 'Confidence: ' + data.conf;
+
+                const lockState = document.getElementById('digital-lockout-overlay');
+                lockState.className = 'absolute bottom-4 left-4 right-4 bg-rose-950/95 border border-rose-500/60 text-rose-200 px-4 py-2.5 rounded-xl flex items-center justify-between transition-all duration-300 pulse-red z-30';
+                document.getElementById('lock-state-text').innerText = 'SOFTWARE SHIFT LOCKED / PICKUP BLOCKED';
+                document.getElementById('lock-state-text').className = 'text-rose-300 uppercase font-mono font-bold';
+                
+                document.getElementById('hitl-prompt').classList.remove('hidden');
+
+            } else {
+                entropyBar.className = 'bg-emerald-400 h-full transition-all duration-500';
+                document.getElementById('entropy-value').className = 'font-mono text-3xl font-extrabold text-emerald-400';
+                document.getElementById('entropy-evaluation').innerText = 'Model Entropy Low • High Confidence Accept';
+                document.getElementById('entropy-evaluation').className = 'text-[11px] text-emerald-400 font-medium';
+
+                const badge = document.getElementById('decision-badge');
+                badge.className = 'p-4 rounded-xl border border-emerald-500/40 bg-emerald-500/10 text-center pulse-green transition-all duration-300';
+                document.getElementById('decision-category').innerText = data.category;
+                document.getElementById('decision-category').className = 'font-mono text-xl font-bold text-emerald-400';
+                document.getElementById('decision-conf').innerText = 'Classification Confidence: ' + data.conf;
+
+                const lockState = document.getElementById('digital-lockout-overlay');
+                lockState.className = 'absolute bottom-4 left-4 right-4 bg-emerald-950/90 border border-emerald-500/40 text-emerald-300 px-4 py-2.5 rounded-xl flex items-center justify-between transition-all duration-300 z-30';
+                document.getElementById('lock-state-text').innerText = 'LOG UNLOCKED / PICKUP APPROVED';
+                document.getElementById('lock-state-text').className = 'text-emerald-300 uppercase font-mono font-bold';
+
+                document.getElementById('hitl-prompt').classList.add('hidden');
+            }
+        }
+
+        function overrideLog(action) {
+            alert('Manual Inspection Logged: Waste pickup status updated to ' + action);
+            loadScenario('yellow');
+        }
+
+        function downloadManifest() {
+            const manifest = {
+                platform: "BioSentinel-OS (Live Camera & AI Scanner)",
+                cpcb_manifest_id: "CPCB-IND-2026-90821",
+                facility_id: "HCF-AIIMS-DELHI-04",
+                timestamp: new Date().toISOString(),
+                software_scans: [
+                    {
+                        barcode: document.getElementById('barcode-display').innerText,
+                        scenario: currentScenario,
+                        verified_category: document.getElementById('decision-category').innerText,
+                        softmax_entropy: document.getElementById('entropy-value').innerText,
+                        mass_grams: document.getElementById('pill-mass').innerText,
+                        cpcb_rule_compliance: "SCHEDULE I & II COMPLIANT"
+                    }
+                ],
+                digital_signature: "SHA256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            };
+
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(manifest, null, 2));
+            const downloadAnchor = document.createElement('a');
+            downloadAnchor.setAttribute("href", dataStr);
+            downloadAnchor.setAttribute("download", "CPCB_Biomedical_Waste_Manifest.json");
+            document.body.appendChild(downloadAnchor);
+            downloadAnchor.click();
+            downloadAnchor.remove();
+        }
+
+        loadScenario('yellow');
+    </script>
+</body>
+</html>
