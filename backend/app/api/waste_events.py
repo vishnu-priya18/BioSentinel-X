@@ -40,6 +40,23 @@ def list_events(db: Session = Depends(get_db)):
         })
     return results
 
+@router.get("/debug/latest")
+def get_latest_debug_event(db: Session = Depends(get_db)):
+    dec = db.query(Decision).order_by(Decision.id.desc()).first()
+    if not dec or not dec.trace_json:
+        raise HTTPException(status_code=404, detail="No analysis events found")
+    
+    trace = dec.trace_json
+    return {
+        "event_id": trace.get("event_id"),
+        "raw_ai_prediction": trace.get("prediction"),
+        "mapped_category": trace.get("classification"),
+        "hazard_assessment": trace.get("hazard"),
+        "uncertainty": trace.get("uncertainty"),
+        "conflict": trace.get("conflicts"),
+        "final_decision": trace.get("decision")
+    }
+
 @router.get("/{event_code}/trace")
 def get_decision_trace(event_code: str, db: Session = Depends(get_db)):
     ev = db.query(WasteEvent).filter(WasteEvent.event_code == event_code).first()
@@ -68,7 +85,7 @@ def get_evidence_graph(event_code: str, db: Session = Depends(get_db)):
         {"id": "dept", "type": "evidence", "label": "Department Baseline: 2.1kg", "status": "SUPPORTING"},
         {"id": "image", "type": "evidence", "label": f"Image Quality: {trace.get('evidence', {}).get('image_quality', 0.85):.2f}", "status": "SUPPORTING" if trace.get("evidence", {}).get("image_quality", 0.85) >= 0.4 else "FAIL"},
         {"id": "weight", "type": "evidence", "label": f"Weight: {ev.weight_kg}kg", "status": "SUPPORTING" if trace.get("conflicts", {}).get("conflict_codes") == [] else "CONFLICTING"},
-        {"id": "classifier", "type": "ai", "label": f"AI Prediction: {trace.get('prediction', {}).get('category', 'Red')} ({trace.get('prediction', {}).get('confidence', 0.9)*100:.0f}%)", "status": "INFO"},
+        {"id": "classifier", "type": "ai", "label": f"AI Object: {trace.get('classification', {}).get('object_class', 'UNKNOWN')} -> {trace.get('classification', {}).get('bag_category', 'UNKNOWN')} ({trace.get('prediction', {}).get('confidence', 0.9)*100:.0f}%)", "status": "INFO"},
         {"id": "uncertainty", "type": "uncertainty", "label": f"Softmax Entropy H={trace.get('uncertainty', {}).get('entropy', 0.18):.2f}", "status": "WARNING" if trace.get("uncertainty", {}).get("entropy", 0.18) >= 0.42 else "SUPPORTING"},
         {"id": "decision", "type": "decision", "label": f"Decision: {dec.decision_state if dec else 'UNKNOWN'}", "status": dec.decision_state if dec else "UNKNOWN"}
     ]
@@ -97,7 +114,7 @@ def analyze_waste_event(payload: WasteEventCreate, db: Session = Depends(get_db)
     quality_score = QualityEvaluator.evaluate(payload.image_base64)
     observability = ObservabilityEngine.evaluate(payload.opacity_state, payload.container_type)
     
-    # 2. AI Classification Model Prediction
+    # 2. AI Classification & Object Detection Model Prediction
     classifier = DemoWasteClassifier()
     pred_res = classifier.predict(payload.image_base64, {
         "declared_category": payload.declared_category_code,
@@ -109,7 +126,8 @@ def analyze_waste_event(payload: WasteEventCreate, db: Session = Depends(get_db)
     hazard_res = HazardGate.assess(payload.image_base64, {
         "scenario_code": event_code,
         "declared_category": payload.declared_category_code,
-        "item_description": payload.user_notes
+        "item_description": payload.user_notes,
+        "demo_hazard": pred_res.object_class if pred_res.object_class in ["SYRINGE", "NEEDLE", "SCALPEL", "BLADE", "LANCET"] else ""
     })
     
     # 4. Department Baseline Lookup
@@ -119,7 +137,7 @@ def analyze_waste_event(payload: WasteEventCreate, db: Session = Depends(get_db)
     # 5. Evidence Fusion
     fusion_res = EvidenceFusionEngine.fuse(
         declared_category=payload.declared_category_code,
-        predicted_category=pred_res.predicted_category,
+        predicted_category=pred_res.bag_category,
         barcode_scanned=payload.barcode_scanned or f"CPCB-IND-{event_code}",
         weight_kg=payload.weight_kg,
         baseline_weight_kg=baseline_weight,
@@ -156,16 +174,57 @@ def analyze_waste_event(payload: WasteEventCreate, db: Session = Depends(get_db)
     # Construct DecisionTrace
     trace = DecisionTrace(
         event_id=event_code,
-        prediction={"category": pred_res.predicted_category, "confidence": pred_res.confidence, "probabilities": pred_res.probabilities, "model_version": pred_res.model_version},
+        prediction={
+            "object_class": pred_res.object_class,
+            "category": pred_res.bag_category,
+            "confidence": pred_res.confidence,
+            "probabilities": pred_res.probabilities,
+            "model_version": pred_res.model_version
+        },
         hazard=hazard_res.to_dict(),
-        evidence={"image_quality": quality_score, "observability": observability, "barcode_support": fusion_res.barcode_support, "weight_support": fusion_res.weight_support, "historical_support": fusion_res.historical_support, "hazard_support": fusion_res.hazard_support, "missing_evidence": fusion_res.missing_evidence},
-        conflicts={"score": fusion_res.conflict_score, "detected": fusion_res.conflict_score > 0, "conflict_codes": fusion_res.conflict_codes},
-        uncertainty={"entropy": unc_res.entropy, "uncertainty_score": unc_res.uncertainty_score, "calibration_status": unc_res.calibration_status},
-        risk={"score": max(fusion_res.conflict_score, unc_res.uncertainty_score, hazard_res.score if hazard_res.critical_hazard else 0.0), "hazard_risk": hazard_res.score, "anomaly_risk": anom_res.z_score / 5.0, "delay_risk": 0.1, "department_criticality": 0.8},
-        decision={"state": decision_state, "automation_allowed": automation_allowed, "reason_codes": [r["message"] for r in reasons], "action_recommended": "Auto Approve" if decision_state == "SAFE_TO_AUTOMATE" else ("Critical Hazard - Human Verification & Safe Handling Required" if hazard_res.critical_hazard else "Human Verification Required")},
+        evidence={
+            "image_quality": quality_score,
+            "observability": observability,
+            "barcode_support": fusion_res.barcode_support,
+            "weight_support": fusion_res.weight_support,
+            "historical_support": fusion_res.historical_support,
+            "hazard_support": fusion_res.hazard_support,
+            "missing_evidence": fusion_res.missing_evidence
+        },
+        conflicts={
+            "score": fusion_res.conflict_score,
+            "detected": fusion_res.conflict_score > 0,
+            "conflict_codes": fusion_res.conflict_codes
+        },
+        uncertainty={
+            "entropy": unc_res.entropy,
+            "uncertainty_score": unc_res.uncertainty_score,
+            "calibration_status": unc_res.calibration_status
+        },
+        risk={
+            "score": max(fusion_res.conflict_score, unc_res.uncertainty_score, hazard_res.score if hazard_res.critical_hazard else 0.0),
+            "hazard_risk": hazard_res.score,
+            "anomaly_risk": anom_res.z_score / 5.0,
+            "delay_risk": 0.1,
+            "department_criticality": 0.8
+        },
+        decision={
+            "state": decision_state,
+            "automation_allowed": automation_allowed,
+            "reason_codes": [r["message"] for r in reasons],
+            "action_recommended": "Auto Approve" if decision_state == "SAFE_TO_AUTOMATE" else ("Critical Hazard - Human Verification & Safe Handling Required" if hazard_res.critical_hazard else "Human Verification Required")
+        },
         counterfactual={"required": counterfactuals},
         versions={"model_version": pred_res.model_version, "fusion_version": "V1", "policy_version": "V1", "risk_version": "V1", "trace_version": "V1"},
         timestamps={"created_at": datetime.datetime.utcnow().isoformat()}
     )
     
-    return {"decision_state": decision_state, "automation_allowed": automation_allowed, "trace": trace.to_dict(), "reasons": reasons}
+    # Inject classification payload
+    trace_dict = trace.to_dict()
+    trace_dict["classification"] = {
+        "object_class": pred_res.object_class,
+        "waste_type": pred_res.waste_type,
+        "bag_category": pred_res.bag_category
+    }
+    
+    return {"decision_state": decision_state, "automation_allowed": automation_allowed, "trace": trace_dict, "reasons": reasons}

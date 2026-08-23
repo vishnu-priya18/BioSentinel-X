@@ -26,6 +26,7 @@ import { RegulatoryConfigPage } from './pages/RegulatoryConfigPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { AnalysisResultPage } from './pages/AnalysisResultPage';
+import { AiModelManagementPage } from './pages/AiModelManagementPage';
 
 const AppLayout: React.FC = () => {
   return (
@@ -39,6 +40,7 @@ const AppLayout: React.FC = () => {
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/scan" element={<ScanWastePage />} />
             <Route path="/events/:eventCode" element={<AnalysisResultPage />} />
+            <Route path="/ai-models" element={<AiModelManagementPage />} />
             <Route path="/verification" element={<VerificationQueuePage />} />
             <Route path="/collection" element={<CollectionTasksPage />} />
             <Route path="/passports" element={<WastePassportPage />} />

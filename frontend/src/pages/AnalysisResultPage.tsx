@@ -4,6 +4,7 @@ import { ShieldCheck, ArrowLeft, AlertTriangle, Calculator, FileText, CheckCircl
 import { apiService } from '../services/api';
 import { WhyNotPanel } from '../components/WhyNotPanel';
 import { CriticalHazardAlert } from '../components/CriticalHazardAlert';
+import { WasteCategoryBadge } from '../components/WasteCategoryBadge';
 
 export const AnalysisResultPage: React.FC = () => {
   const { eventCode } = useParams<{ eventCode: string }>();
@@ -17,10 +18,10 @@ export const AnalysisResultPage: React.FC = () => {
         if (data) {
           setTrace(data);
         } else {
-          // Fallback simulation trace
           setTrace({
             event_id: eventCode || 'DEMO-005',
-            prediction: { category: 'White', confidence: 0.97, model_version: 'DEMO_SIMULATION_MODEL_V1.0' },
+            prediction: { object_class: 'SYRINGE', category: 'WHITE', confidence: 0.97, model_version: 'DEMO_SIMULATION_MODEL_V1.0' },
+            classification: { object_class: 'SYRINGE', waste_type: 'SHARPS', bag_category: 'WHITE' },
             hazard: { detected: true, hazard_type: 'SYRINGE', severity: 'CRITICAL', score: 0.97, critical: true, critical_hazard: true, automation_allowed: false, evidence_source: 'Hazard Gate', explanation: 'Critical sharp biomedical hazard detected.' },
             evidence: { image_quality: 0.91, observability: 'OBSERVABLE', barcode_support: 0.94, weight_support: 0.72 },
             conflicts: { score: 0.0, detected: false, conflict_codes: [] },
@@ -79,48 +80,51 @@ export const AnalysisResultPage: React.FC = () => {
         />
       )}
 
-      <!-- Raw AI Prediction vs BioSentinel-X Safety Assessment -->
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <!-- 3 Mandated Distinct Sections: A. Object Detection | B. Waste Disposal Category | C. Safety Assessment -->
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         
-        <!-- Left: Raw AI Prediction -->
-        <div className="glass-panel p-5 rounded-2xl border border-slate-800 space-y-3">
-          <span className="text-[10px] text-slate-400 uppercase tracking-widest block font-mono">1. Raw AI Computer-Vision Prediction</span>
-          <div className="bg-slate-900 p-4 rounded-xl border border-slate-800 space-y-2">
-            <div className="flex justify-between font-mono text-xs">
-              <span className="text-slate-400">Predicted Category:</span>
-              <strong className="text-cyan-400 text-sm">{trace?.prediction?.category?.toUpperCase()}</strong>
-            </div>
-            <div className="flex justify-between font-mono text-xs">
-              <span className="text-slate-400">Model Raw Confidence:</span>
-              <strong className="text-slate-200">{((trace?.prediction?.confidence || 0) * 100).toFixed(1)}%</strong>
-            </div>
-            <div className="flex justify-between font-mono text-xs">
-              <span className="text-slate-400">Model Version:</span>
-              <span className="text-slate-400 text-[11px]">{trace?.prediction?.model_version || 'DEMO_MODEL'}</span>
+        <!-- A. AI OBJECT PREDICTION -->
+        <div className="glass-panel p-5 rounded-2xl border border-slate-800 space-y-2">
+          <span className="text-[10px] text-slate-400 uppercase tracking-widest block font-mono font-bold">A. AI Object Detection</span>
+          <div className="bg-slate-900 p-3.5 rounded-xl border border-slate-800 space-y-1 font-mono">
+            <span className="text-xs text-slate-400 block">Detected Physical Object</span>
+            <strong className="text-cyan-300 text-base block font-bold">
+              {trace?.classification?.object_class || trace?.prediction?.object_class || 'SYRINGE'}
+            </strong>
+            <span className="text-[11px] text-slate-400 block">
+              Confidence: {((trace?.prediction?.confidence || 0.97) * 100).toFixed(1)}%
+            </span>
+          </div>
+        </div>
+
+        <!-- B. WASTE DISPOSAL CATEGORY MAPPER -->
+        <div className="glass-panel p-5 rounded-2xl border border-slate-800 space-y-2">
+          <span className="text-[10px] text-slate-400 uppercase tracking-widest block font-mono font-bold">B. Waste Category Mapper</span>
+          <div className="bg-slate-900 p-3.5 rounded-xl border border-slate-800 space-y-2 font-mono">
+            <span className="text-xs text-slate-400 block">Mapped Waste Type</span>
+            <strong className="text-slate-200 text-xs block font-bold">
+              {trace?.classification?.waste_type || 'SHARPS'}
+            </strong>
+            <div className="pt-1">
+              <WasteCategoryBadge 
+                category={trace?.classification?.bag_category || trace?.prediction?.category || 'WHITE'} 
+                size="md"
+              />
             </div>
           </div>
         </div>
 
-        <!-- Right: BioSentinel-X Operational Safety Assessment -->
-        <div className="glass-panel p-5 rounded-2xl border border-cyan-500/30 bg-cyan-950/20 space-y-3">
-          <span className="text-[10px] text-cyan-300 uppercase tracking-widest block font-mono">2. BioSentinel-X Operational Safety Gate</span>
-          <div className="bg-slate-900 p-4 rounded-xl border border-slate-800 space-y-2">
-            <div className="flex justify-between font-mono text-xs">
-              <span className="text-slate-400">Hazard Assessment:</span>
-              <strong className={isCriticalHazard ? 'text-rose-400' : 'text-emerald-400'}>
-                {trace?.hazard?.hazard_type || 'NONE'} ({trace?.hazard?.severity || 'LOW'})
-              </strong>
-            </div>
-            <div className="flex justify-between font-mono text-xs">
-              <span className="text-slate-400">Automation Permission:</span>
-              <strong className={trace?.decision?.automation_allowed ? 'text-emerald-400' : 'text-rose-400'}>
-                {trace?.decision?.automation_allowed ? 'PERMISSION GRANTED' : 'BLOCKED BY POLICY'}
-              </strong>
-            </div>
-            <div className="flex justify-between font-mono text-xs">
-              <span className="text-slate-400">Final Policy State:</span>
-              <strong className="text-rose-400 font-extrabold">{trace?.decision?.state}</strong>
-            </div>
+        <!-- C. OPERATIONAL SAFETY DECISION -->
+        <div className="glass-panel p-5 rounded-2xl border border-cyan-500/30 bg-cyan-950/20 space-y-2">
+          <span className="text-[10px] text-cyan-300 uppercase tracking-widest block font-mono font-bold">C. Operational Safety Gate</span>
+          <div className="bg-slate-900 p-3.5 rounded-xl border border-slate-800 space-y-1 font-mono">
+            <span className="text-xs text-slate-400 block">Automation Permission</span>
+            <strong className={trace?.decision?.automation_allowed ? 'text-emerald-400 text-xs block' : 'text-rose-400 text-xs block'}>
+              {trace?.decision?.automation_allowed ? 'PERMISSION GRANTED' : 'BLOCKED BY POLICY'}
+            </strong>
+            <span className="text-[11px] text-rose-400 font-extrabold block">
+              State: {trace?.decision?.state}
+            </span>
           </div>
         </div>
 
@@ -128,7 +132,7 @@ export const AnalysisResultPage: React.FC = () => {
 
       <!-- Why Not Panel -->
       <WhyNotPanel
-        predictedCategory={trace?.prediction?.category || 'White'}
+        predictedCategory={trace?.classification?.bag_category || trace?.prediction?.category || 'WHITE'}
         confidence={trace?.prediction?.confidence || 0.97}
         decisionState={trace?.decision?.state || 'HIGH_RISK_ESCALATION'}
         reasons={trace?.decision?.reason_codes?.map((r: string) => ({

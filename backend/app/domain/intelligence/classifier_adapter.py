@@ -1,8 +1,12 @@
 from typing import Protocol, Dict, Any, Optional
 from dataclasses import dataclass
+from app.domain.intelligence.category_mapper import WasteCategoryMapper
 
 @dataclass
 class ClassificationResult:
+    object_class: str
+    waste_type: str
+    bag_category: str
     predicted_category: str
     confidence: float
     probabilities: Dict[str, float]
@@ -17,61 +21,79 @@ class DemoWasteClassifier:
     """
     Deterministic Prototype Simulator for SIH Demonstration.
     Clearly labeled as DEMO SIMULATION MODEL.
-    Separates Category Prediction from Hazard Gate Authorization.
+    Separates Physical Object Detection -> Category Mapping -> Hazard Gate Authorization.
+    NEVER defaults to YELLOW for uncertain or sharp objects.
     """
     def predict(self, image_base64: Optional[str] = None, metadata: Optional[dict] = None) -> ClassificationResult:
         metadata = metadata or {}
         model_ver = "DEMO_SIMULATION_MODEL_V1.0"
         
         code = metadata.get("scenario_code", "")
-        item_desc = (metadata.get("item_description") or "").upper()
+        item_desc = (metadata.get("item_description") or "").lower()
+        declared_cat = metadata.get("declared_category", "")
+        
+        object_name = "unknown"
+        confidence = 0.85
         
         if code == "DEMO-001":
-            return ClassificationResult(
-                predicted_category="Red",
-                confidence=0.94,
-                probabilities={"Yellow": 0.02, "Red": 0.94, "White": 0.02, "Blue": 0.02},
-                model_version=model_ver,
-                inference_ms=32.0
-            )
+            object_name = "iv_tube"
+            confidence = 0.94
+        elif code == "DEMO-002":
+            object_name = "gauze"
+            confidence = 0.62
         elif code == "DEMO-003":
-            return ClassificationResult(
-                predicted_category="Red",
-                confidence=0.91,
-                probabilities={"Yellow": 0.05, "Red": 0.91, "White": 0.02, "Blue": 0.02},
-                model_version=model_ver,
-                inference_ms=35.0
-            )
+            object_name = "unknown"
+            confidence = 0.50
         elif code == "DEMO-004":
-            return ClassificationResult(
-                predicted_category="Red",
-                confidence=0.88,
-                probabilities={"Yellow": 0.08, "Red": 0.88, "White": 0.02, "Blue": 0.02},
-                model_version=model_ver,
-                inference_ms=30.0
-            )
-        elif code == "DEMO-005" or "SYRINGE" in item_desc or "NEEDLE" in item_desc or "SCALPEL" in item_desc:
-            return ClassificationResult(
-                predicted_category="White",
-                confidence=0.97,
-                probabilities={"Yellow": 0.01, "Red": 0.01, "White": 0.97, "Blue": 0.01},
-                model_version=model_ver,
-                inference_ms=28.0
-            )
-            
-        declared = (metadata.get("declared_category") or "Red").capitalize()
-        if declared not in ["Yellow", "Red", "White", "Blue"]:
-            declared = "Red"
-            
-        probs = {"Yellow": 0.05, "Red": 0.05, "White": 0.05, "Blue": 0.05}
-        probs[declared] = 0.85
+            object_name = "iv_tube"
+            confidence = 0.88
+        elif code == "DEMO-005" or "syringe" in item_desc or "injection" in item_desc or "needle" in item_desc or "scalpel" in item_desc or "blade" in item_desc:
+            if "needle" in item_desc:
+                object_name = "needle"
+            elif "scalpel" in item_desc:
+                object_name = "scalpel"
+            elif "blade" in item_desc:
+                object_name = "blade"
+            else:
+                object_name = "syringe"
+            confidence = 0.97
+        elif "glass" in item_desc or "vial" in item_desc or "ampoule" in item_desc:
+            object_name = "medicine_vial"
+            confidence = 0.92
+        elif "gauze" in item_desc or "cotton" in item_desc:
+            object_name = "gauze"
+            confidence = 0.89
+        elif "tube" in item_desc or "catheter" in item_desc:
+            object_name = "iv_tube"
+            confidence = 0.91
+        elif declared_cat and declared_cat.upper() != "UNKNOWN":
+            if declared_cat.upper() == "RED":
+                object_name = "iv_tube"
+            elif declared_cat.upper() == "WHITE":
+                object_name = "syringe"
+            elif declared_cat.upper() == "BLUE":
+                object_name = "medicine_vial"
+            elif declared_cat.upper() == "YELLOW":
+                object_name = "gauze"
+
+        mapping = WasteCategoryMapper.map_object_to_category(object_name)
         
+        probs = {"Yellow": 0.05, "Red": 0.05, "White": 0.05, "Blue": 0.05, "Unknown": 0.05}
+        cat_key = mapping.bag_category.capitalize()
+        if cat_key in probs:
+            probs[cat_key] = confidence
+        else:
+            probs["Unknown"] = confidence
+
         return ClassificationResult(
-            predicted_category=declared,
-            confidence=0.85,
+            object_class=mapping.object_class,
+            waste_type=mapping.waste_type,
+            bag_category=mapping.bag_category,
+            predicted_category=mapping.bag_category,
+            confidence=confidence,
             probabilities=probs,
             model_version=model_ver,
-            inference_ms=34.0
+            inference_ms=30.0
         )
 
 class ONNXWasteClassifierAdapter:

@@ -1,15 +1,16 @@
 import React, { useState } from 'react';
-import { Camera, QrCode, Upload, ArrowRight, ShieldAlert, CheckCircle2, XCircle, AlertTriangle, RefreshCw } from 'lucide-react';
+import { Camera, QrCode, ArrowRight, ShieldAlert, CheckCircle2, AlertTriangle, RefreshCw } from 'lucide-react';
 import { apiService } from '../services/api';
-import { DecisionState } from '../types';
+import { WasteCategoryBadge } from '../components/WasteCategoryBadge';
+import { CriticalHazardAlert } from '../components/CriticalHazardAlert';
 
 export const ScanWastePage: React.FC = () => {
   const [step, setStep] = useState<number>(1);
-  const [barcode, setBarcode] = useState<string>('CPCB-IND-2026-90821-YEL');
-  const [declaredCategory, setDeclaredCategory] = useState<string>('Yellow');
-  const [weightKg, setWeightKg] = useState<number>(4.5);
+  const [barcode, setBarcode] = useState<string>('CPCB-IND-2026-90821-WHT');
+  const [declaredCategory, setDeclaredCategory] = useState<string>('White');
+  const [weightKg, setWeightKg] = useState<number>(0.25);
   const [opacityState, setOpacityState] = useState<string>('OBSERVABLE');
-  const [userNotes, setUserNotes] = useState<string>('');
+  const [userNotes, setUserNotes] = useState<string>('Syringe / Needle');
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
   const [decisionResult, setDecisionResult] = useState<any>(null);
 
@@ -34,10 +35,18 @@ export const ScanWastePage: React.FC = () => {
         if (res) {
           setDecisionResult(res);
         } else {
+          // Fallback simulation
+          const isSyringe = userNotes.toLowerCase().includes('syringe') || userNotes.toLowerCase().includes('needle');
+          const isOpaque = opacityState === 'NOT_OBSERVABLE';
           setDecisionResult({
-            decision_state: opacityState === 'NOT_OBSERVABLE' ? 'UNKNOWN' : (userNotes.toLowerCase().includes('syringe') ? 'HIGH_RISK_ESCALATION' : 'SAFE_TO_AUTOMATE'),
-            automation_allowed: opacityState === 'NOT_OBSERVABLE' || userNotes.toLowerCase().includes('syringe') ? false : true,
-            reasons: [{ status: 'PASS', source: 'Quality', message: 'Image evidence clear', technical_value: '0.88', explanation: 'Sufficient clear image' }]
+            decision_state: isOpaque ? 'UNKNOWN' : (isSyringe ? 'HIGH_RISK_ESCALATION' : 'SAFE_TO_AUTOMATE'),
+            automation_allowed: isOpaque || isSyringe ? false : true,
+            trace: {
+              prediction: { object_class: isSyringe ? 'SYRINGE' : 'IV_TUBE', category: isSyringe ? 'WHITE' : 'RED', confidence: 0.97 },
+              classification: { object_class: isSyringe ? 'SYRINGE' : 'IV_TUBE', waste_type: isSyringe ? 'SHARPS' : 'CONTAMINATED_PLASTIC', bag_category: isSyringe ? 'WHITE' : 'RED' },
+              hazard: { detected: isSyringe, hazard_type: isSyringe ? 'SYRINGE' : 'NONE', severity: isSyringe ? 'CRITICAL' : 'LOW', score: isSyringe ? 0.97 : 0.05, critical: isSyringe, critical_hazard: isSyringe, automation_allowed: !isSyringe, explanation: isSyringe ? 'Critical sharp biomedical hazard detected.' : 'No hazard.' },
+              decision: { state: isOpaque ? 'UNKNOWN' : (isSyringe ? 'HIGH_RISK_ESCALATION' : 'SAFE_TO_AUTOMATE'), automation_allowed: !isSyringe }
+            }
           });
         }
         setStep(5);
@@ -51,8 +60,10 @@ export const ScanWastePage: React.FC = () => {
   const resetForm = () => {
     setStep(1);
     setDecisionResult(null);
-    setUserNotes('');
+    setUserNotes('Syringe / Needle');
   };
+
+  const trace = decisionResult?.trace || {};
 
   return (
     <div className="max-w-xl mx-auto p-4 flex flex-col gap-6">
@@ -124,7 +135,7 @@ export const ScanWastePage: React.FC = () => {
 
             <div className="flex justify-center gap-3">
               <span className="text-[10px] font-mono bg-emerald-500/10 text-emerald-400 px-2.5 py-1 rounded border border-emerald-500/20">
-                Quality: 0.88 (Good)
+                Quality: 0.91 (Good)
               </span>
               <span className="text-[10px] font-mono bg-cyan-500/10 text-cyan-400 px-2.5 py-1 rounded border border-cyan-500/20">
                 Resolution: 1920x1080
@@ -137,7 +148,7 @@ export const ScanWastePage: React.FC = () => {
               Back
             </button>
             <button onClick={() => setStep(3)} className="flex-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-bold text-xs py-3 px-4 rounded-xl shadow-lg flex items-center justify-center gap-2">
-              <span>Next: Enter Weight & Opacity</span>
+              <span>Next: Enter Weight & Item Type</span>
               <ArrowRight className="w-4 h-4 text-slate-950" />
             </button>
           </div>
@@ -148,27 +159,13 @@ export const ScanWastePage: React.FC = () => {
       {step === 3 && (
         <div className="glass-panel p-6 rounded-2xl border border-slate-800 space-y-5 animate-fadeIn">
           <div className="text-center space-y-1">
-            <h3 className="font-bold text-base text-slate-100">Step 3: Enter Scale Weight & Opacity</h3>
-            <p className="text-xs text-slate-400">Specify floor scale weight and bag material opacity</p>
+            <h3 className="font-bold text-base text-slate-100">Step 3: Enter Scale Weight & Item Details</h3>
+            <p className="text-xs text-slate-400">Specify physical item description and container metadata</p>
           </div>
 
           <div className="space-y-4 text-xs font-mono">
             <div className="bg-slate-900 p-3 rounded-xl border border-slate-800 space-y-1.5">
-              <label className="text-[10px] text-slate-400 uppercase tracking-widest block font-sans">Declared Category</label>
-              <select 
-                value={declaredCategory} 
-                onChange={(e) => setDeclaredCategory(e.target.value)}
-                className="w-full bg-slate-950 text-slate-200 p-2.5 rounded-lg border border-slate-800 focus:outline-none"
-              >
-                <option value="Yellow">Yellow (Incineration)</option>
-                <option value="Red">Red (Autoclave/Recycle)</option>
-                <option value="White">White Sharps</option>
-                <option value="Blue">Blue Glassware</option>
-              </select>
-            </div>
-
-            <div className="bg-slate-900 p-3 rounded-xl border border-slate-800 space-y-1.5">
-              <label className="text-[10px] text-slate-400 uppercase tracking-widest block font-sans">Item Description (e.g. Syringe, Needle, IV Set)</label>
+              <label className="text-[10px] text-slate-400 uppercase tracking-widest block font-sans">Item Description (e.g. Syringe, Needle, IV Tube, Gauze)</label>
               <input 
                 type="text" 
                 placeholder="e.g. Syringe or Needle"
@@ -179,10 +176,24 @@ export const ScanWastePage: React.FC = () => {
             </div>
 
             <div className="bg-slate-900 p-3 rounded-xl border border-slate-800 space-y-1.5">
+              <label className="text-[10px] text-slate-400 uppercase tracking-widest block font-sans">Declared Container Label</label>
+              <select 
+                value={declaredCategory} 
+                onChange={(e) => setDeclaredCategory(e.target.value)}
+                className="w-full bg-slate-950 text-slate-200 p-2.5 rounded-lg border border-slate-800 focus:outline-none"
+              >
+                <option value="White">White (Sharps)</option>
+                <option value="Red">Red (Contaminated Plastic)</option>
+                <option value="Yellow">Yellow (Soiled / Anatomical Incineration)</option>
+                <option value="Blue">Blue (Glassware / Ampoules)</option>
+              </select>
+            </div>
+
+            <div className="bg-slate-900 p-3 rounded-xl border border-slate-800 space-y-1.5">
               <label className="text-[10px] text-slate-400 uppercase tracking-widest block font-sans">Scale Weight (kg)</label>
               <input 
                 type="number" 
-                step="0.1"
+                step="0.05"
                 value={weightKg}
                 onChange={(e) => setWeightKg(parseFloat(e.target.value) || 0)}
                 className="w-full bg-slate-950 text-slate-200 p-2.5 rounded-lg border border-slate-800 font-bold focus:outline-none"
@@ -196,7 +207,7 @@ export const ScanWastePage: React.FC = () => {
                 onChange={(e) => setOpacityState(e.target.value)}
                 className="w-full bg-slate-950 text-cyan-400 font-bold p-2.5 rounded-lg border border-slate-800 focus:outline-none"
               >
-                <option value="OBSERVABLE">OBSERVABLE (Transparent Bag)</option>
+                <option value="OBSERVABLE">OBSERVABLE (Clear Container)</option>
                 <option value="PARTIALLY_OBSERVABLE">PARTIALLY OBSERVABLE (Semi-Translucent)</option>
                 <option value="NOT_OBSERVABLE">NOT OBSERVABLE (Opaque / Sealed Bag)</option>
               </select>
@@ -207,7 +218,7 @@ export const ScanWastePage: React.FC = () => {
             onClick={handleRunAnalysis}
             className="w-full bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-bold text-xs py-3.5 rounded-xl shadow-lg shadow-cyan-500/20 flex items-center justify-center gap-2 transition"
           >
-            <span>EXECUTE AI & POLICY ANALYSIS</span>
+            <span>EXECUTE OBJECT CLASSIFICATION & POLICY ANALYSIS</span>
             <ArrowRight className="w-4 h-4 text-slate-950" />
           </button>
         </div>
@@ -219,16 +230,45 @@ export const ScanWastePage: React.FC = () => {
           <div className="w-16 h-16 rounded-full bg-cyan-500/20 border border-cyan-500/40 text-cyan-400 mx-auto flex items-center justify-center animate-spin">
             <RefreshCw className="w-8 h-8" />
           </div>
-          <h3 className="font-bold text-base text-slate-100">Analyzing Multi-Modal Evidence...</h3>
-          <p className="text-xs text-slate-400 font-mono">Running Quality Engine → Hazard Gate → Evidence Fusion → Deterministic Policy Engine</p>
+          <h3 className="font-bold text-base text-slate-100">Analyzing Object & Safety Gate...</h3>
+          <p className="text-xs text-slate-400 font-mono">Object Detection → Waste Category Mapper → Hazard Gate → Deterministic Policy Engine</p>
         </div>
       )}
 
       <!-- Step 5: Worker Decision Result View -->
       {step === 5 && decisionResult && (
         <div className="glass-panel p-6 rounded-2xl border border-slate-800 space-y-5 animate-fadeIn">
+          
+          {/* Section A: AI Object Prediction */}
+          <div className="bg-slate-900 p-4 rounded-xl border border-slate-800 space-y-1">
+            <span className="text-[10px] text-slate-400 uppercase tracking-widest font-mono block font-sans">A. AI Object Detection</span>
+            <div className="flex items-center justify-between font-mono">
+              <span className="text-cyan-400 font-bold text-base">
+                💉 {trace.classification?.object_class || trace.prediction?.object_class || 'UNKNOWN'}
+              </span>
+              <span className="text-slate-300 text-xs font-bold">
+                Confidence: {((trace.prediction?.confidence || 0.97) * 100).toFixed(1)}%
+              </span>
+            </div>
+          </div>
+
+          {/* Section B: Waste Disposal Category */}
+          <div className="bg-slate-900 p-4 rounded-xl border border-slate-800 space-y-2">
+            <span className="text-[10px] text-slate-400 uppercase tracking-widest font-mono block font-sans">B. Waste Disposal Category</span>
+            <div className="flex items-center justify-between font-mono">
+              <span className="text-slate-200 font-bold text-xs">
+                Type: {trace.classification?.waste_type || 'SHARPS'}
+              </span>
+              <WasteCategoryBadge 
+                category={trace.classification?.bag_category || trace.prediction?.category || 'WHITE'} 
+                size="md"
+              />
+            </div>
+          </div>
+
+          {/* Section C: Safety Decision */}
           <div className="text-center space-y-2">
-            <span className="text-[10px] text-slate-400 uppercase tracking-widest font-mono">Operational Policy Outcome</span>
+            <span className="text-[10px] text-slate-400 uppercase tracking-widest font-mono font-sans block">C. Safety & Operational Decision</span>
 
             {decisionResult.decision_state === 'SAFE_TO_AUTOMATE' && (
               <div className="p-4 rounded-xl border border-emerald-500/40 bg-emerald-500/10 text-emerald-400 text-center space-y-1">
@@ -257,9 +297,9 @@ export const ScanWastePage: React.FC = () => {
             {decisionResult.decision_state === 'HIGH_RISK_ESCALATION' && (
               <div className="p-4 rounded-xl border-2 border-rose-500 bg-rose-950/40 text-rose-200 text-center space-y-1 shadow-xl">
                 <ShieldAlert className="w-8 h-8 mx-auto text-rose-400 animate-pulse" />
-                <h3 className="font-mono text-xl font-bold text-rose-100">🔴 CRITICAL HAZARD / HIGH-RISK ESCALATION</h3>
-                <p className="text-xs text-rose-300 font-sans font-bold">AUTOMATION BLOCKED BY SAFETY POLICY</p>
-                <p className="text-[11px] text-slate-300 font-sans">High AI prediction confidence does NOT override a sharp hazard.</p>
+                <h3 className="font-mono text-xl font-bold text-rose-100">🔴 HIGH-RISK ESCALATION</h3>
+                <p className="text-xs text-rose-300 font-sans font-bold">AUTOMATION: BLOCKED</p>
+                <p className="text-[11px] text-slate-300 font-sans">Critical sharp hazard detected. Requires puncture-proof sharp container handling.</p>
               </div>
             )}
           </div>

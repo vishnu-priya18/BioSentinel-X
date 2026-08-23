@@ -16,10 +16,16 @@ class LoginRequest(BaseModel):
 
 # DecisionTrace Sub-Schemas
 class PredictionPayload(BaseModel):
+    object_class: str = "UNKNOWN"
     category: str
     confidence: float
     probabilities: Dict[str, float]
     model_version: str
+
+class ClassificationPayload(BaseModel):
+    object_class: str
+    waste_type: str
+    bag_category: str
 
 class HazardPayload(BaseModel):
     detected: bool
@@ -76,6 +82,7 @@ class VersionsPayload(BaseModel):
 class DecisionTraceSchema(BaseModel):
     event_id: str
     prediction: PredictionPayload
+    classification: ClassificationPayload
     hazard: HazardPayload
     evidence: EvidencePayload
     conflicts: ConflictsPayload
