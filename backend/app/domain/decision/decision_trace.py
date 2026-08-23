@@ -1,5 +1,5 @@
 from dataclasses import dataclass, asdict
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import datetime
 
 @dataclass(frozen=True)
@@ -7,9 +7,11 @@ class DecisionTrace:
     """
     Central Immutable Decision Object.
     Every waste analysis MUST produce a DecisionTrace.
+    Single Source of Truth for Why Not panel, Verification Queue, Waste Passport, and Audit Trail.
     """
     event_id: str
     prediction: Dict[str, Any]
+    hazard: Dict[str, Any]
     evidence: Dict[str, Any]
     conflicts: Dict[str, Any]
     uncertainty: Dict[str, Any]

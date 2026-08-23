@@ -1,3 +1,4 @@
+import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List, Dict, Any
@@ -10,6 +11,7 @@ from app.domain.evidence.evidence_fusion_engine import EvidenceFusionEngine
 from app.domain.intelligence.classifier_adapter import DemoWasteClassifier
 from app.domain.intelligence.uncertainty_engine import UncertaintyEngine
 from app.domain.intelligence.anomaly_engine import AnomalyEngine
+from app.domain.safety.hazard_gate import HazardGate
 from app.domain.decision.policy_engine import PolicyEngine
 from app.domain.decision.reasoning_panel_engine import ReasoningPanelEngine
 from app.domain.decision.counterfactual_engine import CounterfactualEngine
@@ -59,9 +61,9 @@ def get_evidence_graph(event_code: str, db: Session = Depends(get_db)):
     dec = db.query(Decision).filter(Decision.event_id == ev.id).first()
     trace = dec.trace_json if dec else {}
     
-    # Construct visual node graph for React Flow / D3 visualization
     nodes = [
         {"id": "event", "type": "event", "label": f"Waste Event: {event_code}", "status": "INFO"},
+        {"id": "hazard", "type": "hazard", "label": f"Hazard: {trace.get('hazard', {}).get('hazard_type', 'NONE')} ({trace.get('hazard', {}).get('severity', 'LOW')})", "status": "FAIL" if trace.get('hazard', {}).get('critical') else "SUPPORTING"},
         {"id": "barcode", "type": "evidence", "label": f"Barcode: CPCB-{event_code}", "status": "SUPPORTING" if not trace.get("conflicts", {}).get("detected") else "CONFLICTING"},
         {"id": "dept", "type": "evidence", "label": "Department Baseline: 2.1kg", "status": "SUPPORTING"},
         {"id": "image", "type": "evidence", "label": f"Image Quality: {trace.get('evidence', {}).get('image_quality', 0.85):.2f}", "status": "SUPPORTING" if trace.get("evidence", {}).get("image_quality", 0.85) >= 0.4 else "FAIL"},
@@ -72,12 +74,14 @@ def get_evidence_graph(event_code: str, db: Session = Depends(get_db)):
     ]
     
     edges = [
+        {"source": "event", "target": "hazard"},
         {"source": "event", "target": "barcode"},
         {"source": "event", "target": "dept"},
         {"source": "event", "target": "image"},
         {"source": "event", "target": "weight"},
         {"source": "image", "target": "classifier"},
         {"source": "classifier", "target": "uncertainty"},
+        {"source": "hazard", "target": "decision"},
         {"source": "barcode", "target": "uncertainty"},
         {"source": "weight", "target": "uncertainty"},
         {"source": "uncertainty", "target": "decision"}
@@ -95,13 +99,24 @@ def analyze_waste_event(payload: WasteEventCreate, db: Session = Depends(get_db)
     
     # 2. AI Classification Model Prediction
     classifier = DemoWasteClassifier()
-    pred_res = classifier.predict(payload.image_base64, {"declared_category": payload.declared_category_code, "scenario_code": event_code})
+    pred_res = classifier.predict(payload.image_base64, {
+        "declared_category": payload.declared_category_code,
+        "scenario_code": event_code,
+        "item_description": payload.user_notes
+    })
     
-    # 3. Department Baseline Lookup
+    # 3. Hazard Gate Assessment (Independent Safety Gate)
+    hazard_res = HazardGate.assess(payload.image_base64, {
+        "scenario_code": event_code,
+        "declared_category": payload.declared_category_code,
+        "item_description": payload.user_notes
+    })
+    
+    # 4. Department Baseline Lookup
     dept = db.query(Department).filter(Department.id == payload.dept_id).first()
     baseline_weight = dept.baseline_daily_waste_kg if dept else 2.1
     
-    # 4. Evidence Fusion
+    # 5. Evidence Fusion
     fusion_res = EvidenceFusionEngine.fuse(
         declared_category=payload.declared_category_code,
         predicted_category=pred_res.predicted_category,
@@ -109,46 +124,48 @@ def analyze_waste_event(payload: WasteEventCreate, db: Session = Depends(get_db)
         weight_kg=payload.weight_kg,
         baseline_weight_kg=baseline_weight,
         observability=observability,
-        quality_score=quality_score
+        quality_score=quality_score,
+        hazard_result=hazard_res
     )
     
-    # 5. Uncertainty Engine
+    # 6. Uncertainty Engine
     unc_res = UncertaintyEngine.calculate(pred_res.probabilities, quality_score, observability)
     
-    # 6. Anomaly Engine
+    # 7. Anomaly Engine
     anom_res = AnomalyEngine.evaluate_weight(payload.weight_kg, baseline_weight)
     
-    # 7. Deterministic Policy Engine Decision
-    decision_state = PolicyEngine.decide(
-        conflict_score=fusion_res.conflict_score,
-        risk_score=max(fusion_res.conflict_score, unc_res.uncertainty_score),
-        observability=observability,
-        critical_missing="LOW_IMAGE_QUALITY" in fusion_res.missing_evidence,
-        uncertainty_score=unc_res.uncertainty_score,
-        has_noncritical_missing=len(fusion_res.missing_evidence) > 0,
-        has_conflict=len(fusion_res.conflict_codes) > 0
+    # 8. 8-Step Deterministic Policy Engine Decision
+    decision_state, automation_allowed = PolicyEngine.decide(
+        system_error=False,
+        critical_hazard_detected=hazard_res.critical_hazard,
+        critical_conflict=fusion_res.conflict_score >= 0.60,
+        operational_risk_high=max(fusion_res.conflict_score, unc_res.uncertainty_score) >= 0.65,
+        not_observable_or_critical_missing=(observability == "NOT_OBSERVABLE" or "LOW_IMAGE_QUALITY" in fusion_res.missing_evidence),
+        high_uncertainty=unc_res.uncertainty_score >= 0.60,
+        moderate_uncertainty_or_minor_conflict=(unc_res.uncertainty_score >= 0.35 or len(fusion_res.missing_evidence) > 0 or len(fusion_res.conflict_codes) > 0)
     )
     
-    # 8. Reasons & Counterfactuals
+    # 9. Reasons & Counterfactuals
     reasons = ReasoningPanelEngine.generate_reasons(
-        quality_score, pred_res.confidence, observability, fusion_res.conflict_codes, unc_res.uncertainty_score, anom_res.z_score
+        quality_score, pred_res.confidence, observability, fusion_res.conflict_codes, unc_res.uncertainty_score, anom_res.z_score, hazard_res
     )
     counterfactuals = CounterfactualEngine.evaluate_required_conditions(
-        observability, fusion_res.conflict_codes, unc_res.uncertainty_score, quality_score
+        observability, fusion_res.conflict_codes, unc_res.uncertainty_score, quality_score, hazard_res
     )
     
     # Construct DecisionTrace
     trace = DecisionTrace(
         event_id=event_code,
         prediction={"category": pred_res.predicted_category, "confidence": pred_res.confidence, "probabilities": pred_res.probabilities, "model_version": pred_res.model_version},
-        evidence={"image_quality": quality_score, "observability": observability, "barcode_support": fusion_res.barcode_support, "weight_support": fusion_res.weight_support, "historical_support": fusion_res.historical_support, "missing_evidence": fusion_res.missing_evidence},
+        hazard=hazard_res.to_dict(),
+        evidence={"image_quality": quality_score, "observability": observability, "barcode_support": fusion_res.barcode_support, "weight_support": fusion_res.weight_support, "historical_support": fusion_res.historical_support, "hazard_support": fusion_res.hazard_support, "missing_evidence": fusion_res.missing_evidence},
         conflicts={"score": fusion_res.conflict_score, "detected": fusion_res.conflict_score > 0, "conflict_codes": fusion_res.conflict_codes},
         uncertainty={"entropy": unc_res.entropy, "uncertainty_score": unc_res.uncertainty_score, "calibration_status": unc_res.calibration_status},
-        risk={"score": max(fusion_res.conflict_score, unc_res.uncertainty_score), "hazard_risk": 0.3, "anomaly_risk": anom_res.z_score / 5.0, "delay_risk": 0.1, "department_criticality": 0.8},
-        decision={"state": decision_state, "reason_codes": [r["message"] for r in reasons], "action_recommended": "Auto Approve" if decision_state == "SAFE_TO_AUTOMATE" else "Human Verification Required"},
+        risk={"score": max(fusion_res.conflict_score, unc_res.uncertainty_score, hazard_res.score if hazard_res.critical_hazard else 0.0), "hazard_risk": hazard_res.score, "anomaly_risk": anom_res.z_score / 5.0, "delay_risk": 0.1, "department_criticality": 0.8},
+        decision={"state": decision_state, "automation_allowed": automation_allowed, "reason_codes": [r["message"] for r in reasons], "action_recommended": "Auto Approve" if decision_state == "SAFE_TO_AUTOMATE" else ("Critical Hazard - Human Verification & Safe Handling Required" if hazard_res.critical_hazard else "Human Verification Required")},
         counterfactual={"required": counterfactuals},
         versions={"model_version": pred_res.model_version, "fusion_version": "V1", "policy_version": "V1", "risk_version": "V1", "trace_version": "V1"},
         timestamps={"created_at": datetime.datetime.utcnow().isoformat()}
     )
     
-    return {"decision_state": decision_state, "trace": trace.to_dict(), "reasons": reasons}
+    return {"decision_state": decision_state, "automation_allowed": automation_allowed, "trace": trace.to_dict(), "reasons": reasons}

@@ -17,6 +17,18 @@ export type UserRole =
   | 'VERIFIER'
   | 'VIEWER';
 
+export interface HazardAssessment {
+  detected: boolean;
+  hazard_type: string;
+  severity: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+  score: number;
+  critical: boolean;
+  critical_hazard?: boolean;
+  automation_allowed: boolean;
+  evidence_source: string;
+  explanation: string;
+}
+
 export interface DecisionTrace {
   event_id: string;
   prediction: {
@@ -25,12 +37,14 @@ export interface DecisionTrace {
     probabilities: Record<string, number>;
     model_version: string;
   };
+  hazard: HazardAssessment;
   evidence: {
     image_quality: number;
     observability: ObservabilityState;
     barcode_support: number;
     weight_support: number;
     historical_support: number;
+    hazard_support?: number;
     missing_evidence: string[];
   };
   conflicts: {
@@ -52,6 +66,7 @@ export interface DecisionTrace {
   };
   decision: {
     state: DecisionState;
+    automation_allowed?: boolean;
     reason_codes: string[];
     action_recommended: string;
   };

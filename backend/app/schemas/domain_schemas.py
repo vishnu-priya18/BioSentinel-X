@@ -21,12 +21,23 @@ class PredictionPayload(BaseModel):
     probabilities: Dict[str, float]
     model_version: str
 
+class HazardPayload(BaseModel):
+    detected: bool
+    hazard_type: str
+    severity: str
+    score: float
+    critical: bool
+    automation_allowed: bool
+    evidence_source: str
+    explanation: str
+
 class EvidencePayload(BaseModel):
     image_quality: float
     observability: str # OBSERVABLE, PARTIALLY_OBSERVABLE, NOT_OBSERVABLE
     barcode_support: float
     weight_support: float
     historical_support: float
+    hazard_support: Optional[float] = 1.0
     missing_evidence: List[str]
 
 class ConflictsPayload(BaseModel):
@@ -48,6 +59,7 @@ class RiskPayload(BaseModel):
 
 class DecisionPayload(BaseModel):
     state: str # SAFE_TO_AUTOMATE, NEEDS_VERIFICATION, HIGH_RISK_ESCALATION, UNKNOWN, SYSTEM_ERROR
+    automation_allowed: bool = False
     reason_codes: List[str]
     action_recommended: str
 
@@ -64,6 +76,7 @@ class VersionsPayload(BaseModel):
 class DecisionTraceSchema(BaseModel):
     event_id: str
     prediction: PredictionPayload
+    hazard: HazardPayload
     evidence: EvidencePayload
     conflicts: ConflictsPayload
     uncertainty: UncertaintyPayload

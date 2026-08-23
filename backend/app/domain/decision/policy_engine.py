@@ -1,55 +1,64 @@
 from app.config import settings
+from typing import Tuple
 
 class PolicyEngine:
     """
     100% Deterministic Decision Policy Engine.
     The LLM / AI Classifier is NEVER allowed to make the final operational decision.
-    Decision priority logic:
-      1. Known High Risk / Conflict takes priority over UNKNOWN
-      2. NOT_OBSERVABLE / Critical Missing -> UNKNOWN
-      3. High Uncertainty -> HIGH_RISK_ESCALATION
-      4. Moderate Uncertainty / Non-critical missing -> NEEDS_VERIFICATION
-      5. Low Uncertainty + Good Evidence -> SAFE_TO_AUTOMATE
+    AI CONFIDENCE != OPERATIONAL SAFETY.
+    
+    Exact 8-Step Priority Order:
+      STEP 1: System error? -> SYSTEM_ERROR
+      STEP 2: Critical hazard detected? -> HIGH_RISK_ESCALATION
+      STEP 3: Critical evidence conflict? -> HIGH_RISK_ESCALATION
+      STEP 4: Operational risk above threshold? -> HIGH_RISK_ESCALATION
+      STEP 5: Contents not observable or critical evidence missing? -> UNKNOWN
+      STEP 6: High uncertainty? -> HIGH_RISK_ESCALATION
+      STEP 7: Moderate uncertainty / non-critical missing / minor conflict? -> NEEDS_VERIFICATION
+      STEP 8: Otherwise -> SAFE_TO_AUTOMATE
     """
+    
     @staticmethod
     def decide(
-        conflict_score: float,
-        risk_score: float,
-        observability: str,
-        critical_missing: bool,
-        uncertainty_score: float,
-        has_noncritical_missing: bool,
-        has_conflict: bool,
-        system_error: bool = False
-    ) -> str:
+        system_error: bool = False,
+        critical_hazard_detected: bool = False,
+        critical_conflict: bool = False,
+        operational_risk_high: bool = False,
+        not_observable_or_critical_missing: bool = False,
+        high_uncertainty: bool = False,
+        moderate_uncertainty_or_minor_conflict: bool = False
+    ) -> Tuple[str, bool]:
+        """
+        Returns a tuple of (decision_state: str, automation_allowed: bool).
+        Only SAFE_TO_AUTOMATE when no safety gate blocked automation may return automation_allowed = True.
+        """
+        # STEP 1: System error?
         if system_error:
-            return "SYSTEM_ERROR"
+            return ("SYSTEM_ERROR", False)
 
-        # 1. Known high-risk evidence / conflict takes precedence over UNKNOWN
-        if conflict_score >= settings.HIGH_CONFLICT_THRESHOLD:
-            return "HIGH_RISK_ESCALATION"
+        # STEP 2: Critical hazard detected? (Syringe, Needle, Scalpel, Blade, Lancet, Unknown Sharp)
+        if critical_hazard_detected:
+            return ("HIGH_RISK_ESCALATION", False)
 
-        if risk_score >= settings.HIGH_RISK_THRESHOLD:
-            return "HIGH_RISK_ESCALATION"
+        # STEP 3: Critical evidence conflict? (Visual vs Barcode mismatch)
+        if critical_conflict:
+            return ("HIGH_RISK_ESCALATION", False)
 
-        # 2. Cannot safely observe contents
-        if observability == "NOT_OBSERVABLE":
-            return "UNKNOWN"
+        # STEP 4: High operational risk? (Abnormal mass surge / Z-score)
+        if operational_risk_high:
+            return ("HIGH_RISK_ESCALATION", False)
 
-        if critical_missing:
-            return "UNKNOWN"
+        # STEP 5: Content not observable or critical evidence missing? (Opaque bag)
+        if not_observable_or_critical_missing:
+            return ("UNKNOWN", False)
 
-        # 3. High model uncertainty
-        if uncertainty_score >= settings.HIGH_UNCERTAINTY_THRESHOLD:
-            return "HIGH_RISK_ESCALATION"
+        # STEP 6: High model uncertainty entropy?
+        if high_uncertainty:
+            return ("HIGH_RISK_ESCALATION", False)
 
-        # 4. Moderate uncertainty / non-critical missing data / minor conflict
-        if (
-            uncertainty_score >= settings.VERIFICATION_THRESHOLD
-            or has_noncritical_missing
-            or has_conflict
-        ):
-            return "NEEDS_VERIFICATION"
+        # STEP 7: Moderate uncertainty / non-critical missing evidence / minor conflict?
+        if moderate_uncertainty_or_minor_conflict:
+            return ("NEEDS_VERIFICATION", False)
 
-        # 5. All safety checks pass
-        return "SAFE_TO_AUTOMATE"
+        # STEP 8: All safety gates pass cleanly
+        return ("SAFE_TO_AUTOMATE", True)

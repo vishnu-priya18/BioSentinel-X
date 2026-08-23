@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import List
+from typing import List, Optional, Any
 
 @dataclass
 class EvidenceFusionResult:
@@ -7,6 +7,7 @@ class EvidenceFusionResult:
     barcode_support: float
     weight_support: float
     historical_support: float
+    hazard_support: float
     observability: str
     missing_evidence: List[str]
     conflict_score: float
@@ -14,8 +15,8 @@ class EvidenceFusionResult:
 
 class EvidenceFusionEngine:
     """
-    Fuses visual, barcode, weight, department history, and user observation evidence.
-    Calculates conflict_score and conflict_codes.
+    Fuses visual, barcode, weight, department history, hazard evidence, and user observation evidence.
+    Calculates conflict_score and conflict_codes without allowing category confidence to override critical hazards.
     """
     @staticmethod
     def fuse(
@@ -25,7 +26,8 @@ class EvidenceFusionEngine:
         weight_kg: float,
         baseline_weight_kg: float,
         observability: str,
-        quality_score: float
+        quality_score: float,
+        hazard_result: Optional[Any] = None
     ) -> EvidenceFusionResult:
         missing_evidence = []
         conflict_codes = []
@@ -39,12 +41,18 @@ class EvidenceFusionEngine:
         # Support calculations
         visual_support = quality_score if observability != "NOT_OBSERVABLE" else 0.10
         
+        # Hazard support calculation
+        hazard_support = 1.0
+        if hazard_result and hazard_result.detected:
+            hazard_support = hazard_result.score
+            if hazard_result.critical_hazard:
+                conflict_codes.append("CRITICAL_SHARP_HAZARD")
+        
         # Barcode support & conflict check
         barcode_support = 1.0
         if barcode_scanned and declared_category:
-            # Barcode string check for mismatch
             barcode_cat = "YELLOW" if "YEL" in barcode_scanned.upper() else ("RED" if "RED" in barcode_scanned.upper() else "UNKNOWN")
-            if barcode_cat != "UNKNOWN" and barcode_cat != predicted_category:
+            if barcode_cat != "UNKNOWN" and barcode_cat.upper() != predicted_category.upper():
                 barcode_support = 0.12
                 conflict_codes.append("BARCODE_VISUAL_CONFLICT")
                 
@@ -60,6 +68,8 @@ class EvidenceFusionEngine:
         
         # Calculate overall conflict score [0.0, 1.0]
         conflict_score = 0.0
+        if "CRITICAL_SHARP_HAZARD" in conflict_codes:
+            conflict_score += 0.50
         if "BARCODE_VISUAL_CONFLICT" in conflict_codes:
             conflict_score += 0.45
         if "ABNORMAL_WEIGHT" in conflict_codes:
@@ -72,6 +82,7 @@ class EvidenceFusionEngine:
             barcode_support=barcode_support,
             weight_support=weight_support,
             historical_support=historical_support,
+            hazard_support=hazard_support,
             observability=observability,
             missing_evidence=missing_evidence,
             conflict_score=conflict_score,

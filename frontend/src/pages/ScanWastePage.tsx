@@ -9,6 +9,7 @@ export const ScanWastePage: React.FC = () => {
   const [declaredCategory, setDeclaredCategory] = useState<string>('Yellow');
   const [weightKg, setWeightKg] = useState<number>(4.5);
   const [opacityState, setOpacityState] = useState<string>('OBSERVABLE');
+  const [userNotes, setUserNotes] = useState<string>('');
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
   const [decisionResult, setDecisionResult] = useState<any>(null);
 
@@ -24,6 +25,7 @@ export const ScanWastePage: React.FC = () => {
         weight_kg: weightKg,
         container_type: 'PLASTIC_BAG',
         opacity_state: opacityState,
+        user_notes: userNotes,
         barcode_scanned: barcode
       });
 
@@ -32,9 +34,9 @@ export const ScanWastePage: React.FC = () => {
         if (res) {
           setDecisionResult(res);
         } else {
-          // Fallback simulation decision if offline
           setDecisionResult({
-            decision_state: opacityState === 'NOT_OBSERVABLE' ? 'UNKNOWN' : (weightKg > 10 ? 'HIGH_RISK_ESCALATION' : 'SAFE_TO_AUTOMATE'),
+            decision_state: opacityState === 'NOT_OBSERVABLE' ? 'UNKNOWN' : (userNotes.toLowerCase().includes('syringe') ? 'HIGH_RISK_ESCALATION' : 'SAFE_TO_AUTOMATE'),
+            automation_allowed: opacityState === 'NOT_OBSERVABLE' || userNotes.toLowerCase().includes('syringe') ? false : true,
             reasons: [{ status: 'PASS', source: 'Quality', message: 'Image evidence clear', technical_value: '0.88', explanation: 'Sufficient clear image' }]
           });
         }
@@ -49,6 +51,7 @@ export const ScanWastePage: React.FC = () => {
   const resetForm = () => {
     setStep(1);
     setDecisionResult(null);
+    setUserNotes('');
   };
 
   return (
@@ -141,7 +144,7 @@ export const ScanWastePage: React.FC = () => {
         </div>
       )}
 
-      <!-- Step 3: Enter Metadata -->
+      <!-- Step 3: Enter Metadata & Notes -->
       {step === 3 && (
         <div className="glass-panel p-6 rounded-2xl border border-slate-800 space-y-5 animate-fadeIn">
           <div className="text-center space-y-1">
@@ -151,7 +154,7 @@ export const ScanWastePage: React.FC = () => {
 
           <div className="space-y-4 text-xs font-mono">
             <div className="bg-slate-900 p-3 rounded-xl border border-slate-800 space-y-1.5">
-              <label className="text-[10px] text-slate-400 uppercase tracking-widest block">Declared Category</label>
+              <label className="text-[10px] text-slate-400 uppercase tracking-widest block font-sans">Declared Category</label>
               <select 
                 value={declaredCategory} 
                 onChange={(e) => setDeclaredCategory(e.target.value)}
@@ -165,7 +168,18 @@ export const ScanWastePage: React.FC = () => {
             </div>
 
             <div className="bg-slate-900 p-3 rounded-xl border border-slate-800 space-y-1.5">
-              <label className="text-[10px] text-slate-400 uppercase tracking-widest block">Scale Weight (kg)</label>
+              <label className="text-[10px] text-slate-400 uppercase tracking-widest block font-sans">Item Description (e.g. Syringe, Needle, IV Set)</label>
+              <input 
+                type="text" 
+                placeholder="e.g. Syringe or Needle"
+                value={userNotes}
+                onChange={(e) => setUserNotes(e.target.value)}
+                className="w-full bg-slate-950 text-amber-300 font-bold p-2.5 rounded-lg border border-slate-800 focus:outline-none"
+              />
+            </div>
+
+            <div className="bg-slate-900 p-3 rounded-xl border border-slate-800 space-y-1.5">
+              <label className="text-[10px] text-slate-400 uppercase tracking-widest block font-sans">Scale Weight (kg)</label>
               <input 
                 type="number" 
                 step="0.1"
@@ -176,7 +190,7 @@ export const ScanWastePage: React.FC = () => {
             </div>
 
             <div className="bg-slate-900 p-3 rounded-xl border border-slate-800 space-y-1.5">
-              <label className="text-[10px] text-slate-400 uppercase tracking-widest block">Container Opacity State</label>
+              <label className="text-[10px] text-slate-400 uppercase tracking-widest block font-sans">Container Opacity State</label>
               <select 
                 value={opacityState} 
                 onChange={(e) => setOpacityState(e.target.value)}
@@ -206,7 +220,7 @@ export const ScanWastePage: React.FC = () => {
             <RefreshCw className="w-8 h-8" />
           </div>
           <h3 className="font-bold text-base text-slate-100">Analyzing Multi-Modal Evidence...</h3>
-          <p className="text-xs text-slate-400 font-mono">Running Quality Engine → Evidence Fusion → Uncertainty Calibration → Deterministic Policy Engine</p>
+          <p className="text-xs text-slate-400 font-mono">Running Quality Engine → Hazard Gate → Evidence Fusion → Deterministic Policy Engine</p>
         </div>
       )}
 
@@ -219,26 +233,33 @@ export const ScanWastePage: React.FC = () => {
             {decisionResult.decision_state === 'SAFE_TO_AUTOMATE' && (
               <div className="p-4 rounded-xl border border-emerald-500/40 bg-emerald-500/10 text-emerald-400 text-center space-y-1">
                 <CheckCircle2 className="w-8 h-8 mx-auto text-emerald-400" />
-                <h3 className="font-mono text-xl font-bold">SAFE TO AUTOMATE</h3>
-                <p className="text-xs text-emerald-300/80">Waste collection pickup approved. Waste Passport issued.</p>
+                <h3 className="font-mono text-xl font-bold">🟢 SAFE TO AUTOMATE</h3>
+                <p className="text-xs text-emerald-300/80 font-sans">Waste collection pickup approved. Waste Passport issued.</p>
               </div>
             )}
 
             {decisionResult.decision_state === 'NEEDS_VERIFICATION' && (
               <div className="p-4 rounded-xl border border-amber-500/40 bg-amber-500/10 text-amber-400 text-center space-y-1">
                 <AlertTriangle className="w-8 h-8 mx-auto text-amber-400" />
-                <h3 className="font-mono text-xl font-bold">VERIFICATION REQUIRED</h3>
-                <p className="text-xs text-amber-300/80">Moderate uncertainty detected. Sent to verifier queue.</p>
+                <h3 className="font-mono text-xl font-bold">🟡 VERIFICATION REQUIRED</h3>
+                <p className="text-xs text-amber-300/80 font-sans">Moderate evidence uncertainty. Routed to human verifier queue.</p>
               </div>
             )}
 
-            {(decisionResult.decision_state === 'HIGH_RISK_ESCALATION' || decisionResult.decision_state === 'UNKNOWN') && (
-              <div className="p-4 rounded-xl border border-rose-500/50 bg-rose-500/10 text-rose-300 text-center space-y-1">
-                <ShieldAlert className="w-8 h-8 mx-auto text-rose-400" />
-                <h3 className="font-mono text-xl font-bold">STOP / ESCALATE FOR SAFETY</h3>
-                <p className="text-xs text-rose-200/80">
-                  {decisionResult.decision_state === 'UNKNOWN' ? 'Contents not observable from available evidence.' : 'High hazard conflict detected. Collection blocked.'}
-                </p>
+            {decisionResult.decision_state === 'UNKNOWN' && (
+              <div className="p-4 rounded-xl border border-purple-500/40 bg-purple-500/10 text-purple-300 text-center space-y-1">
+                <ShieldAlert className="w-8 h-8 mx-auto text-purple-400" />
+                <h3 className="font-mono text-xl font-bold">⚪ CONTENT NOT OBSERVABLE</h3>
+                <p className="text-xs text-purple-200/80 font-sans">Opaque bag prohibits visual classification. Refuses to guess hidden contents.</p>
+              </div>
+            )}
+
+            {decisionResult.decision_state === 'HIGH_RISK_ESCALATION' && (
+              <div className="p-4 rounded-xl border-2 border-rose-500 bg-rose-950/40 text-rose-200 text-center space-y-1 shadow-xl">
+                <ShieldAlert className="w-8 h-8 mx-auto text-rose-400 animate-pulse" />
+                <h3 className="font-mono text-xl font-bold text-rose-100">🔴 CRITICAL HAZARD / HIGH-RISK ESCALATION</h3>
+                <p className="text-xs text-rose-300 font-sans font-bold">AUTOMATION BLOCKED BY SAFETY POLICY</p>
+                <p className="text-[11px] text-slate-300 font-sans">High AI prediction confidence does NOT override a sharp hazard.</p>
               </div>
             )}
           </div>

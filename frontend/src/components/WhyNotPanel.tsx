@@ -58,14 +58,17 @@ export const WhyNotPanel: React.FC<WhyNotPanelProps> = ({
           <span className="font-mono text-base font-bold text-cyan-400">{predictedCategory.toUpperCase()}</span>
         </div>
         <div className="text-right">
-          <span className="text-[10px] text-slate-400 uppercase tracking-widest block">Raw Confidence</span>
+          <span className="text-[10px] text-slate-400 uppercase tracking-widest block font-sans">Raw Confidence</span>
           <span className="font-mono text-sm font-bold text-slate-200">{(confidence * 100).toFixed(1)}%</span>
         </div>
       </div>
 
-      <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider mt-1">
-        Why can or can't we automatically trust this decision?
-      </p>
+      <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 text-xs text-amber-300 font-sans flex items-start gap-2">
+        <ShieldAlert className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+        <p>
+          <strong className="font-mono text-amber-200">AI Safety Rule:</strong> High AI prediction confidence describes probability, NOT operational permission to act.
+        </p>
+      </div>
 
       <!-- Reasoning Table -->
       <div className="space-y-2">

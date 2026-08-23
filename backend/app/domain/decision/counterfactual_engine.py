@@ -1,18 +1,29 @@
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 class CounterfactualEngine:
     """
-    Evaluates 'What would have made this safe?'
+    Evaluates 'What would make this safe?'
     Returns explicit required evidence conditions for safe automation.
+    AI confidence alone cannot authorize automated handling of a sharp hazard.
     """
     @staticmethod
     def evaluate_required_conditions(
         observability: str,
         conflict_codes: List[str],
         uncertainty_score: float,
-        quality_score: float
+        quality_score: float,
+        hazard_result: Optional[Any] = None
     ) -> List[str]:
         required = []
+        
+        # Hazard clearance requirements
+        if hazard_result and hazard_result.detected:
+            if hazard_result.critical_hazard:
+                required.append("HAZARD_CLEARANCE_AND_INDEPENDENT_VERIFICATION")
+                required.append("SAFE_SHARPS_HANDLING_WORKFLOW_CONFIRMATION")
+                required.append("AUTHORIZED_HUMAN_VERIFIER_SIGN_OFF")
+            else:
+                required.append("HAZARD_RISK_VERIFICATION")
         
         if observability == "NOT_OBSERVABLE":
             required.append("OBSERVABLE_CONTENT_OR_TRANSPARENT_CONTAINER")

@@ -1,9 +1,10 @@
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 class ReasoningPanelEngine:
     """
     Generates structured human-readable reasons for the 'Why Not?' UI panel.
     Statuses: PASS, WARNING, FAIL.
+    Separates raw AI confidence from operational safety permission.
     """
     @staticmethod
     def generate_reasons(
@@ -12,11 +13,12 @@ class ReasoningPanelEngine:
         observability: str,
         conflict_codes: List[str],
         uncertainty_score: float,
-        z_score: float
+        z_score: float,
+        hazard_result: Optional[Any] = None
     ) -> List[Dict[str, Any]]:
         items = []
         
-        # Image Quality
+        # 1. Image Quality
         if quality_score >= 0.70:
             items.append({
                 "status": "PASS",
@@ -34,16 +36,50 @@ class ReasoningPanelEngine:
                 "explanation": "Image blur or low resolution prevents trustworthy visual classification."
             })
             
-        # AI Confidence
+        # 2. Raw AI Confidence
         items.append({
             "status": "PASS" if confidence >= 0.80 else "WARNING",
             "source": "AI Confidence",
             "message": f"Model prediction confidence is {confidence * 100:.1f}%.",
             "technical_value": f"{confidence:.2f}",
-            "explanation": "High raw model confidence does not guarantee operational safety."
+            "explanation": "Raw model confidence describes prediction probability, NOT operational safety permission."
         })
         
-        # Observability
+        # 3. Critical Hazard Gate Evaluation
+        if hazard_result and hazard_result.detected:
+            if hazard_result.critical_hazard:
+                items.append({
+                    "status": "FAIL",
+                    "source": "Critical Hazard Gate",
+                    "message": f"Critical sharp hazard detected ({hazard_result.hazard_type}).",
+                    "technical_value": hazard_result.hazard_type,
+                    "explanation": "Automated approval is disabled regardless of AI confidence whenever a critical sharp is detected."
+                })
+                items.append({
+                    "status": "FAIL",
+                    "source": "Automation Permission",
+                    "message": "Automated processing BLOCKED by safety policy.",
+                    "technical_value": "BLOCKED",
+                    "explanation": "High AI confidence does not override a safety-critical hazard rule."
+                })
+            else:
+                items.append({
+                    "status": "WARNING",
+                    "source": "Hazard Gate",
+                    "message": f"Potential hazard detected ({hazard_result.hazard_type}).",
+                    "technical_value": hazard_result.hazard_type,
+                    "explanation": "Requires safety verification before automated disposal."
+                })
+        else:
+            items.append({
+                "status": "PASS",
+                "source": "Hazard Gate",
+                "message": "No critical sharp biomedical hazard detected.",
+                "technical_value": "NONE",
+                "explanation": "Visual and evidence layers report no prohibited sharp objects."
+            })
+        
+        # 4. Observability
         if observability == "NOT_OBSERVABLE":
             items.append({
                 "status": "FAIL",
@@ -69,7 +105,7 @@ class ReasoningPanelEngine:
                 "explanation": "Transparent container allows full visual inspection."
             })
             
-        # Conflict Check
+        # 5. Conflict Check
         if "BARCODE_VISUAL_CONFLICT" in conflict_codes:
             items.append({
                 "status": "FAIL",
@@ -79,7 +115,7 @@ class ReasoningPanelEngine:
                 "explanation": "CPCB barcode string category does not match visual classification."
             })
             
-        # Weight Anomaly Check
+        # 6. Weight Anomaly Check
         if z_score >= 2.5:
             items.append({
                 "status": "WARNING",

@@ -71,14 +71,13 @@ def seed_database(db: Session):
 
     db.commit()
 
-    # Helper function to create DEMO event records
     prev_hash = AuditChainEngine.GENESIS_HASH
 
     def create_demo_event(
         event_code, dept_id, declared_cat_code, weight_kg, opacity_state,
         pred_cat_code, confidence, quality_score, observability, conflict_score,
         conflict_codes, entropy, uncertainty_score, decision_state, reason_codes,
-        required_evidence, z_score=0.0, is_verified=False
+        required_evidence, z_score=0.0, is_verified=False, hazard_data=None
     ):
         nonlocal prev_hash
 
@@ -101,7 +100,7 @@ def seed_database(db: Session):
             event_id=ev.id,
             model_name="DEMO_SIMULATION_MODEL_V1.0",
             predicted_category_id=cats[pred_cat_code].id,
-            class_probabilities_json={"Yellow": 0.05, "Red": confidence, "White": 0.02, "Blue": 0.03},
+            class_probabilities_json={"Yellow": 0.01, "Red": 0.01, "White": confidence if pred_cat_code == "White" else 0.01, "Blue": 0.01},
             confidence=confidence,
             is_simulated=True
         )
@@ -119,15 +118,24 @@ def seed_database(db: Session):
         )
         db.add(unc)
 
+        # Default hazard data if not provided
+        hz = hazard_data or {
+            "detected": False, "hazard_type": "NONE", "severity": "LOW",
+            "score": 0.05, "critical": False, "critical_hazard": False,
+            "automation_allowed": decision_state == "SAFE_TO_AUTOMATE",
+            "evidence_source": "Hazard Gate Evaluator", "explanation": "No critical sharp hazard detected."
+        }
+
         # Decision Trace Payload
         trace_payload = {
             "event_id": event_code,
-            "prediction": {"category": pred_cat_code, "confidence": confidence, "probabilities": {"Red": confidence}, "model_version": "DEMO_V1"},
-            "evidence": {"image_quality": quality_score, "observability": observability, "barcode_support": 1.0 if not conflict_codes else 0.12, "weight_support": 1.0 if z_score < 2.5 else 0.31, "historical_support": 0.85, "missing_evidence": []},
+            "prediction": {"category": pred_cat_code, "confidence": confidence, "probabilities": {"White": confidence if pred_cat_code == "White" else 0.01, "Red": confidence if pred_cat_code == "Red" else 0.01}, "model_version": "DEMO_V1"},
+            "hazard": hz,
+            "evidence": {"image_quality": quality_score, "observability": observability, "barcode_support": 1.0 if not conflict_codes else 0.12, "weight_support": 1.0 if z_score < 2.5 else 0.31, "historical_support": 0.85, "hazard_support": hz["score"] if hz["detected"] else 1.0, "missing_evidence": []},
             "conflicts": {"score": conflict_score, "detected": len(conflict_codes) > 0, "conflict_codes": conflict_codes},
             "uncertainty": {"entropy": entropy, "uncertainty_score": uncertainty_score, "calibration_status": "CALIBRATED_PROTOTYPE"},
-            "risk": {"score": round(max(conflict_score, uncertainty_score), 2), "hazard_risk": 0.3, "anomaly_risk": 0.8 if z_score >= 2.5 else 0.1, "delay_risk": 0.1, "department_criticality": 0.9},
-            "decision": {"state": decision_state, "reason_codes": reason_codes, "action_recommended": "Auto Approve" if decision_state == "SAFE_TO_AUTOMATE" else "Send for Human Verification"},
+            "risk": {"score": round(max(conflict_score, uncertainty_score, hz["score"] if hz["critical"] else 0.0), 2), "hazard_risk": hz["score"], "anomaly_risk": 0.8 if z_score >= 2.5 else 0.1, "delay_risk": 0.1, "department_criticality": 0.9},
+            "decision": {"state": decision_state, "automation_allowed": hz["automation_allowed"] and decision_state == "SAFE_TO_AUTOMATE", "reason_codes": reason_codes, "action_recommended": "Auto Approve" if decision_state == "SAFE_TO_AUTOMATE" else "Send for Human Verification & Safe Handling"},
             "counterfactual": {"required": required_evidence},
             "versions": {"model_version": "DEMO_V1", "fusion_version": "V1", "policy_version": "V1", "risk_version": "V1", "trace_version": "V1"},
             "timestamps": {"created_at": datetime.datetime.utcnow().isoformat()}
@@ -147,7 +155,6 @@ def seed_database(db: Session):
         )
         db.add(dec)
 
-        # Audit Event & SHA-256 Hash Chain
         aud = AuditEvent(
             id=f"aud-{event_code.lower()}",
             entity_name="WasteEvent",
@@ -168,7 +175,6 @@ def seed_database(db: Session):
         db.add(chain)
         prev_hash = cur_h
 
-        # If verified, issue Waste Passport & Collection Task
         if decision_state == "SAFE_TO_AUTOMATE" or is_verified:
             p_code = PassportEngine.generate_code(event_code)
             passp = WastePassport(
@@ -199,36 +205,44 @@ def seed_database(db: Session):
     create_demo_event("DEMO-002", "dept-emg", "Yellow", 4.5, "OBSERVABLE", "Yellow", 0.62, 0.25, "OBSERVABLE", 0.1, [], 0.52, 0.48, "NEEDS_VERIFICATION", ["Visual quality too low"], ["HIGH_QUALITY_IMAGE_CAPTURE"])
     create_demo_event("DEMO-003", "dept-icu", "Red", 2.1, "NOT_OBSERVABLE", "Red", 0.91, 0.85, "NOT_OBSERVABLE", 0.0, [], 0.22, 0.55, "UNKNOWN", ["Container contents not observable"], ["OBSERVABLE_CONTENT_OR_TRANSPARENT_CONTAINER"])
     create_demo_event("DEMO-004", "dept-lab", "Red", 3.2, "OBSERVABLE", "Red", 0.88, 0.82, "OBSERVABLE", 0.71, ["BARCODE_VISUAL_CONFLICT", "ABNORMAL_WEIGHT"], 0.58, 0.64, "HIGH_RISK_ESCALATION", ["Barcode category conflict", "Abnormal weight"], ["VALID_CATEGORY_BARCODE_MATCH", "NORMAL_DEPARTMENT_WEIGHT_BASELINE"])
-    create_demo_event("DEMO-005", "dept-lab", "Red", 18.5, "OBSERVABLE", "Red", 0.85, 0.80, "OBSERVABLE", 0.65, ["ABNORMAL_WEIGHT"], 0.35, 0.68, "HIGH_RISK_ESCALATION", ["Weight 18.5kg is 8.8x baseline (Z=+4.8)"], ["NORMAL_DEPARTMENT_WEIGHT_BASELINE"], z_score=4.8)
+    
+    # DEMO-005: THE KILLER SYRINGE / SHARP HAZARD DEMO
+    syringe_hazard = {
+        "detected": True, "hazard_type": "SYRINGE", "severity": "CRITICAL",
+        "score": 0.97, "critical": True, "critical_hazard": True,
+        "automation_allowed": False, "evidence_source": "Visual Object Detection & Hazard Evidence Layer",
+        "explanation": "Critical sharp biomedical hazard (SYRINGE) detected. Automated approval is disabled regardless of AI confidence."
+    }
+    create_demo_event("DEMO-005", "dept-lab", "White", 0.45, "OBSERVABLE", "White", 0.97, 0.91, "OBSERVABLE", 0.50, ["CRITICAL_SHARP_HAZARD"], 0.08, 0.10, "HIGH_RISK_ESCALATION", ["Critical sharp biomedical hazard detected (SYRINGE)", "Automated processing BLOCKED by safety policy"], ["HAZARD_CLEARANCE_AND_INDEPENDENT_VERIFICATION", "SAFE_SHARPS_HANDLING_WORKFLOW_CONFIRMATION", "AUTHORIZED_HUMAN_VERIFIER_SIGN_OFF"], hazard_data=syringe_hazard)
+    
     create_demo_event("DEMO-006", "dept-icu", "Yellow", 14.2, "OBSERVABLE", "Yellow", 0.92, 0.88, "OBSERVABLE", 0.0, [], 0.15, 0.14, "SAFE_TO_AUTOMATE", ["ICU Waste volume surge"], ["ALL_SAFETY_BOUNDS_SATISFIED"])
     create_demo_event("DEMO-007", "dept-emg", "Yellow", 4.5, "OBSERVABLE", "Yellow", 0.88, 0.85, "OBSERVABLE", 0.0, [], 0.20, 0.18, "SAFE_TO_AUTOMATE", ["Human verifier approved DEMO-002"], ["ALL_SAFETY_BOUNDS_SATISFIED"], is_verified=True)
     create_demo_event("DEMO-008", "dept-ot", "Blue", 5.0, "OBSERVABLE", "Blue", 0.96, 0.90, "OBSERVABLE", 0.0, [], 0.10, 0.10, "SAFE_TO_AUTOMATE", ["Audit Hash Chain verified"], ["ALL_SAFETY_BOUNDS_SATISFIED"])
 
-    # Seed Anomaly record for DEMO-005
+    # Seed Anomaly record
     anom = Anomaly(
         id="anom-demo-005",
         dept_id="dept-lab",
         event_id="evt-demo-005",
-        anomaly_type="WEIGHT_SURGE_ANOMALY",
-        observed_value=18.5,
-        baseline_value=2.1,
+        anomaly_type="CRITICAL_SHARP_HAZARD",
+        observed_value=0.97,
+        baseline_value=0.0,
         z_score=4.8,
         severity="CRITICAL",
-        recommended_action="Supervisor review recommended for unexpected waste weight surge (8.8x baseline)."
+        recommended_action="Human verification & safe sharps handling procedure required for detected SYRINGE hazard."
     )
     db.add(anom)
 
-    # Seed Alert
     alr = Alert(
         id="alr-01",
         hospital_id="hosp-01",
         dept_id="dept-lab",
-        alert_type="CRITICAL_WEIGHT_SURGE",
-        title="Pathology Lab Weight Anomaly (Z=+4.8)",
-        message="Laboratory waste bag DEMO-005 registered 18.5kg vs 2.1kg baseline (8.8x multiplier).",
+        alert_type="CRITICAL_SHARP_HAZARD",
+        title="Pathology Lab Critical Syringe Hazard (DEMO-005)",
+        message="Critical sharp hazard (SYRINGE) detected with 97% confidence. Automated approval blocked.",
         severity="CRITICAL"
     )
     db.add(alr)
 
     db.commit()
-    print("BioSentinel-X database successfully seeded!")
+    print("BioSentinel-X database successfully seeded with Hazard Safety Domain!")

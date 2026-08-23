@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { PlayCircle, ArrowRight, ArrowLeft, CheckCircle2, AlertTriangle, ShieldAlert, QrCode, Calculator, Zap, History } from 'lucide-react';
 import { apiService } from '../services/api';
 import { WhyNotPanel } from '../components/WhyNotPanel';
+import { CriticalHazardAlert } from '../components/CriticalHazardAlert';
 import { ExplainScoreModal } from '../components/ExplainScoreModal';
 import { PassportCard } from '../components/PassportCard';
 import { DemoScenario } from '../types';
@@ -32,15 +33,21 @@ export const SimulationModePage: React.FC = () => {
       setScenarioData(data);
     } else {
       // Offline fallback simulator
+      const isSyringe = code === 'DEMO-005';
+      const isOpaque = code === 'DEMO-003';
       setScenarioData({
         scenario_code: code,
-        decision_state: code === 'DEMO-001' ? 'SAFE_TO_AUTOMATE' : (code === 'DEMO-003' ? 'UNKNOWN' : 'HIGH_RISK_ESCALATION'),
-        reasons: [{ status: 'PASS', source: 'Simulation Engine', message: `Execution of ${code} scenario`, technical_value: '1.0', explanation: 'Deterministic test case' }],
+        decision_state: code === 'DEMO-001' ? 'SAFE_TO_AUTOMATE' : (isOpaque ? 'UNKNOWN' : 'HIGH_RISK_ESCALATION'),
+        automation_allowed: code === 'DEMO-001' ? true : false,
+        reasons: [
+          { status: isSyringe ? 'FAIL' : 'PASS', source: 'Hazard Gate', message: isSyringe ? 'Critical sharp hazard detected (SYRINGE)' : 'Visual clear', technical_value: isSyringe ? 'SYRINGE' : '0.88', explanation: isSyringe ? 'Automated approval BLOCKED by safety policy' : 'Sufficient clear image' }
+        ],
         trace: {
-          prediction: { category: 'Red', confidence: 0.91 },
-          evidence: { image_quality: 0.85, observability: code === 'DEMO-003' ? 'NOT_OBSERVABLE' : 'OBSERVABLE' },
-          decision: { state: code === 'DEMO-001' ? 'SAFE_TO_AUTOMATE' : (code === 'DEMO-003' ? 'UNKNOWN' : 'HIGH_RISK_ESCALATION') },
-          counterfactual: { required: ['OBSERVABLE_CONTENT', 'VALID_BARCODE'] }
+          prediction: { category: isSyringe ? 'White' : 'Red', confidence: isSyringe ? 0.97 : 0.91 },
+          hazard: { detected: isSyringe, hazard_type: isSyringe ? 'SYRINGE' : 'NONE', severity: isSyringe ? 'CRITICAL' : 'LOW', score: isSyringe ? 0.97 : 0.05, critical: isSyringe, critical_hazard: isSyringe, automation_allowed: !isSyringe, evidence_source: 'Hazard Gate', explanation: isSyringe ? 'Critical sharp biomedical hazard detected.' : 'No hazard.' },
+          evidence: { image_quality: 0.85, observability: isOpaque ? 'NOT_OBSERVABLE' : 'OBSERVABLE' },
+          decision: { state: code === 'DEMO-001' ? 'SAFE_TO_AUTOMATE' : (isOpaque ? 'UNKNOWN' : 'HIGH_RISK_ESCALATION'), automation_allowed: code === 'DEMO-001' },
+          counterfactual: { required: isSyringe ? ['HAZARD_CLEARANCE_AND_INDEPENDENT_VERIFICATION', 'SAFE_SHARPS_HANDLING_WORKFLOW_CONFIRMATION'] : ['OBSERVABLE_CONTENT', 'VALID_BARCODE'] }
         },
         audit_chain_status: 'VALID_HASH_CHAIN'
       });
@@ -68,7 +75,7 @@ export const SimulationModePage: React.FC = () => {
             </h2>
           </div>
           <p className="text-xs text-slate-400 max-w-2xl">
-            Walk judges through all 8 deterministic test scenarios (DEMO-001 to DEMO-008) proving uncertainty-aware abstention, opaque bag detection, evidence conflict resolution, and SHA-256 audit chaining.
+            Walk judges through all 8 deterministic test scenarios (DEMO-001 to DEMO-008) proving uncertainty-aware abstention, syringe sharp hazard blocking, evidence conflict resolution, and SHA-256 audit chaining.
           </p>
         </div>
 
@@ -121,6 +128,14 @@ export const SimulationModePage: React.FC = () => {
           <!-- Left 7 Columns: Scenario Explanation & Evidence Breakdown -->
           <div className="col-span-12 lg:col-span-7 space-y-6">
             
+            <!-- Critical Hazard Banner if detected -->
+            {scenarioData.trace?.hazard?.detected && (
+              <CriticalHazardAlert
+                hazard={scenarioData.trace.hazard}
+                aiConfidence={scenarioData.trace?.prediction?.confidence || 0.97}
+              />
+            )}
+
             <div className="glass-panel p-6 rounded-2xl border border-slate-800 space-y-4">
               <div className="flex items-center justify-between border-b border-slate-800 pb-3">
                 <div>

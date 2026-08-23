@@ -2,67 +2,60 @@ import pytest
 from app.domain.decision.policy_engine import PolicyEngine
 
 def test_policy_safe_automation():
-    # Good evidence, low uncertainty, no conflict -> SAFE_TO_AUTOMATE
-    state = PolicyEngine.decide(
-        conflict_score=0.0,
-        risk_score=0.1,
-        observability="OBSERVABLE",
-        critical_missing=False,
-        uncertainty_score=0.15,
-        has_noncritical_missing=False,
-        has_conflict=False
+    state, allowed = PolicyEngine.decide(
+        system_error=False,
+        critical_hazard_detected=False,
+        critical_conflict=False,
+        operational_risk_high=False,
+        not_observable_or_critical_missing=False,
+        high_uncertainty=False,
+        moderate_uncertainty_or_minor_conflict=False
     )
     assert state == "SAFE_TO_AUTOMATE"
+    assert allowed is True
 
 def test_policy_opaque_container_unknown():
-    # Opaque container -> UNKNOWN
-    state = PolicyEngine.decide(
-        conflict_score=0.0,
-        risk_score=0.1,
-        observability="NOT_OBSERVABLE",
-        critical_missing=False,
-        uncertainty_score=0.15,
-        has_noncritical_missing=False,
-        has_conflict=False
+    state, allowed = PolicyEngine.decide(
+        system_error=False,
+        critical_hazard_detected=False,
+        critical_conflict=False,
+        operational_risk_high=False,
+        not_observable_or_critical_missing=True,
+        high_uncertainty=False,
+        moderate_uncertainty_or_minor_conflict=False
     )
     assert state == "UNKNOWN"
+    assert allowed is False
 
 def test_policy_high_conflict_escalation():
-    # Known high conflict / hazard takes priority over UNKNOWN
-    state = PolicyEngine.decide(
-        conflict_score=0.71,
-        risk_score=0.8,
-        observability="NOT_OBSERVABLE",
-        critical_missing=False,
-        uncertainty_score=0.64,
-        has_noncritical_missing=False,
-        has_conflict=True
+    state, allowed = PolicyEngine.decide(
+        system_error=False,
+        critical_hazard_detected=False,
+        critical_conflict=True,
+        operational_risk_high=True,
+        not_observable_or_critical_missing=True,
+        high_uncertainty=True,
+        moderate_uncertainty_or_minor_conflict=False
     )
     assert state == "HIGH_RISK_ESCALATION"
+    assert allowed is False
 
 def test_policy_moderate_uncertainty_verification():
-    # Moderate uncertainty -> NEEDS_VERIFICATION
-    state = PolicyEngine.decide(
-        conflict_score=0.1,
-        risk_score=0.2,
-        observability="OBSERVABLE",
-        critical_missing=False,
-        uncertainty_score=0.45,
-        has_noncritical_missing=False,
-        has_conflict=False
+    state, allowed = PolicyEngine.decide(
+        system_error=False,
+        critical_hazard_detected=False,
+        critical_conflict=False,
+        operational_risk_high=False,
+        not_observable_or_critical_missing=False,
+        high_uncertainty=False,
+        moderate_uncertainty_or_minor_conflict=True
     )
     assert state == "NEEDS_VERIFICATION"
+    assert allowed is False
 
 def test_policy_system_error():
-    # System error -> SYSTEM_ERROR
-    state = PolicyEngine.decide(
-        conflict_score=0.0,
-        risk_score=0.0,
-        observability="OBSERVABLE",
-        critical_missing=False,
-        uncertainty_score=0.0,
-        has_noncritical_missing=False,
-        has_conflict=False,
+    state, allowed = PolicyEngine.decide(
         system_error=True
     )
     assert state == "SYSTEM_ERROR"
+    assert allowed is False
