@@ -10,6 +10,7 @@ from app.schemas.domain_schemas import WasteEventCreate, DecisionTraceSchema
 from app.domain.evidence.quality_evaluator import QualityEvaluator
 from app.domain.evidence.observability_engine import ObservabilityEngine
 from app.domain.evidence.evidence_fusion_engine import EvidenceFusionEngine
+from app.domain.intelligence.object_detector import WasteObjectDetector, ObjectDetectionResponse
 from app.domain.intelligence.classifier_adapter import DemoWasteClassifier
 from app.domain.intelligence.uncertainty_engine import UncertaintyEngine
 from app.domain.intelligence.anomaly_engine import AnomalyEngine
@@ -53,8 +54,9 @@ def get_latest_debug_event(db: Session = Depends(get_db)):
     trace = dec.trace_json
     return {
         "event_id": trace.get("event_id"),
-        "raw_ai_prediction": trace.get("prediction"),
-        "mapped_category": trace.get("classification"),
+        "detected_objects": trace.get("detected_objects"),
+        "primary_object": trace.get("primary_object"),
+        "recommended_category": trace.get("recommended_category"),
         "hazard_assessment": trace.get("hazard"),
         "uncertainty": trace.get("uncertainty"),
         "conflict": trace.get("conflicts"),
@@ -73,42 +75,20 @@ def get_decision_trace(event_code: str, db: Session = Depends(get_db)):
         
     return dec.trace_json
 
-@router.get("/{event_code}/graph")
-def get_evidence_graph(event_code: str, db: Session = Depends(get_db)):
-    ev = db.query(WasteEvent).filter(WasteEvent.event_code == event_code).first()
-    if not ev:
-        raise HTTPException(status_code=404, detail="Waste event not found")
-        
-    dec = db.query(Decision).filter(Decision.event_id == ev.id).first()
-    trace = dec.trace_json if dec else {}
-    
-    nodes = [
-        {"id": "event", "type": "event", "label": f"Waste Event: {event_code}", "status": "INFO"},
-        {"id": "hazard", "type": "hazard", "label": f"Hazard: {trace.get('hazard', {}).get('hazard_type', 'NONE')} ({trace.get('hazard', {}).get('severity', 'LOW')})", "status": "FAIL" if trace.get('hazard', {}).get('critical') else "SUPPORTING"},
-        {"id": "barcode", "type": "evidence", "label": f"Barcode: CPCB-{event_code}", "status": "SUPPORTING" if not trace.get("conflicts", {}).get("detected") else "CONFLICTING"},
-        {"id": "dept", "type": "evidence", "label": "Department Baseline: 2.1kg", "status": "SUPPORTING"},
-        {"id": "image", "type": "evidence", "label": f"Image Quality: {trace.get('evidence', {}).get('image_quality', 0.85):.2f}", "status": "SUPPORTING" if trace.get("evidence", {}).get("image_quality", 0.85) >= 0.4 else "FAIL"},
-        {"id": "weight", "type": "evidence", "label": f"Weight: {ev.weight_kg}kg", "status": "SUPPORTING" if trace.get("conflicts", {}).get("conflict_codes") == [] else "CONFLICTING"},
-        {"id": "classifier", "type": "ai", "label": f"AI Object: {trace.get('classification', {}).get('object_class', 'UNKNOWN')} -> {trace.get('classification', {}).get('bag_category', 'UNKNOWN')} ({trace.get('prediction', {}).get('confidence', 0.9)*100:.0f}%)", "status": "INFO"},
-        {"id": "uncertainty", "type": "uncertainty", "label": f"Softmax Entropy H={trace.get('uncertainty', {}).get('entropy', 0.18):.2f}", "status": "WARNING" if trace.get("uncertainty", {}).get("entropy", 0.18) >= 0.42 else "SUPPORTING"},
-        {"id": "decision", "type": "decision", "label": f"Decision: {dec.decision_state if dec else 'UNKNOWN'}", "status": dec.decision_state if dec else "UNKNOWN"}
-    ]
-    
-    edges = [
-        {"source": "event", "target": "hazard"},
-        {"source": "event", "target": "barcode"},
-        {"source": "event", "target": "dept"},
-        {"source": "event", "target": "image"},
-        {"source": "event", "target": "weight"},
-        {"source": "image", "target": "classifier"},
-        {"source": "classifier", "target": "uncertainty"},
-        {"source": "hazard", "target": "decision"},
-        {"source": "barcode", "target": "uncertainty"},
-        {"source": "weight", "target": "uncertainty"},
-        {"source": "uncertainty", "target": "decision"}
-    ]
-    
-    return {"nodes": nodes, "edges": edges}
+@router.post("/detect")
+async def detect_objects_only(
+    image_file: Optional[UploadFile] = File(None),
+    payload: Optional[WasteEventCreate] = None
+):
+    """
+    Dedicated Object Detection Endpoint.
+    Returns detected objects, bounding boxes, confidence, and primary object.
+    """
+    detection_res = WasteObjectDetector.detect(
+        image_base64=payload.image_base64 if payload else None,
+        metadata={"item_description": payload.user_notes if payload else ""}
+    )
+    return detection_res.to_dict()
 
 @router.post("/analyze")
 async def analyze_waste_event(
@@ -117,9 +97,8 @@ async def analyze_waste_event(
     db: Session = Depends(get_db)
 ):
     """
-    Real Image Biomedical Waste Analysis Pipeline.
-    Process actual uploaded file or Base64 image payload.
-    NEVER uses YELLOW as a fallback for unknown objects or model errors.
+    Complete 12-Step BioSentinel-X Decision Pipeline:
+    REAL IMAGE -> OBJECT DETECTOR -> HAZARD GATE -> CATEGORY MAPPER -> POLICY ENGINE -> DECISION TRACE
     """
     if payload is None:
         payload = WasteEventCreate(
@@ -132,15 +111,12 @@ async def analyze_waste_event(
 
     event_code = payload.event_code or f"EVT-{int(datetime.datetime.utcnow().timestamp())}"
     image_bytes = None
-    filename = "base64_payload.png"
+    filename = "uploaded_photo.png"
     size_bytes = 0
-    width = 1920
-    height = 1080
 
-    # Extract image bytes from multipart upload or base64
     try:
         if image_file:
-            filename = image_file.filename or "uploaded_image.png"
+            filename = image_file.filename or "uploaded_photo.png"
             image_bytes = await image_file.read()
             size_bytes = len(image_bytes)
         elif payload.image_base64:
@@ -157,37 +133,46 @@ async def analyze_waste_event(
             "reason": "Corrupted image file or invalid encoding format."
         }
 
-    # Debug Log Image Reception
-    logger.info(f"[VISION DEBUG] IMAGE RECEIVED: filename={filename}, size_bytes={size_bytes}, width={width}, height={height}")
+    logger.info(f"[VISION DEBUG] IMAGE RECEIVED: filename={filename}, size_bytes={size_bytes}")
     logger.info("[VISION DEBUG] OBJECT DETECTOR STARTED")
 
-    # 1. Quality & Observability Evaluation
+    # Step 1: Quality & Observability
     quality_score = QualityEvaluator.evaluate(payload.image_base64)
     observability = ObservabilityEngine.evaluate(payload.opacity_state, payload.container_type)
-    
-    # 2. AI Classification & Object Detection Model Prediction
+
+    # Step 2: Object Detection
+    detection_res = WasteObjectDetector.detect(payload.image_base64, {
+        "item_description": payload.user_notes,
+        "scenario_code": event_code
+    })
+
+    # Step 3: Classifier prediction
     classifier = DemoWasteClassifier()
     pred_res = classifier.predict(payload.image_base64, {
         "declared_category": payload.declared_category_code,
         "scenario_code": event_code,
         "item_description": payload.user_notes
     })
-    
-    logger.info(f"[VISION DEBUG] OBJECT DETECTOR RESULT: primary_object={pred_res.object_class}, waste_type={pred_res.waste_type}, bag_category={pred_res.bag_category}, confidence={pred_res.confidence}")
 
-    # 3. Hazard Gate Assessment (Independent Safety Gate)
+    primary_obj = detection_res.primary_object
+    primary_class = primary_obj.class_name if primary_obj else "UNKNOWN_OBJECT"
+    primary_conf = primary_obj.confidence if primary_obj else 0.50
+
+    logger.info(f"[VISION DEBUG] DETECTOR RESULT: primary_object={primary_class}, confidence={primary_conf}")
+
+    # Step 4: Hazard Gate Assessment
     hazard_res = HazardGate.assess(payload.image_base64, {
         "scenario_code": event_code,
         "declared_category": payload.declared_category_code,
         "item_description": payload.user_notes,
-        "demo_hazard": pred_res.object_class if pred_res.object_class in ["SYRINGE", "NEEDLE", "SCALPEL", "BLADE", "LANCET"] else ""
+        "demo_hazard": primary_class if primary_class in ["SYRINGE", "NEEDLE", "SCALPEL", "BLADE", "LANCET"] else ""
     })
-    
-    # 4. Department Baseline Lookup
+
+    # Step 5: Department Baseline Lookup
     dept = db.query(Department).filter(Department.id == payload.dept_id).first()
     baseline_weight = dept.baseline_daily_waste_kg if dept else 2.1
-    
-    # 5. Evidence Fusion
+
+    # Step 6: Evidence Fusion
     fusion_res = EvidenceFusionEngine.fuse(
         declared_category=payload.declared_category_code,
         predicted_category=pred_res.bag_category,
@@ -198,44 +183,57 @@ async def analyze_waste_event(
         quality_score=quality_score,
         hazard_result=hazard_res
     )
-    
-    # 6. Uncertainty Engine
+
+    # Step 7: Uncertainty Engine
     unc_res = UncertaintyEngine.calculate(pred_res.probabilities, quality_score, observability)
-    
-    # 7. Anomaly Engine
+
+    # Step 8: Anomaly Engine
     anom_res = AnomalyEngine.evaluate_weight(payload.weight_kg, baseline_weight)
-    
-    # 8. 8-Step Deterministic Policy Engine Decision
+
+    # Step 9: Deterministic Policy Engine Decision
     decision_state, automation_allowed = PolicyEngine.decide(
         system_error=False,
         critical_hazard_detected=hazard_res.critical_hazard,
         critical_conflict=fusion_res.conflict_score >= 0.60,
         operational_risk_high=max(fusion_res.conflict_score, unc_res.uncertainty_score) >= 0.65,
-        not_observable_or_critical_missing=(observability == "NOT_OBSERVABLE" or "LOW_IMAGE_QUALITY" in fusion_res.missing_evidence),
+        object_not_detected=(detection_res.detector_status == "NO_OBJECT_DETECTED" or primary_conf < 0.50),
+        not_observable=(observability == "NOT_OBSERVABLE" or "LOW_IMAGE_QUALITY" in fusion_res.missing_evidence),
         high_uncertainty=unc_res.uncertainty_score >= 0.60,
-        moderate_uncertainty_or_minor_conflict=(unc_res.uncertainty_score >= 0.35 or len(fusion_res.missing_evidence) > 0 or len(fusion_res.conflict_codes) > 0)
+        moderate_uncertainty=(unc_res.uncertainty_score >= 0.35 or len(fusion_res.missing_evidence) > 0 or len(fusion_res.conflict_codes) > 0)
     )
-    
-    # 9. Reasons & Counterfactuals
+
+    # Step 10: Reasons & Counterfactuals
     reasons = ReasoningPanelEngine.generate_reasons(
         quality_score, pred_res.confidence, observability, fusion_res.conflict_codes, unc_res.uncertainty_score, anom_res.z_score, hazard_res
     )
     counterfactuals = CounterfactualEngine.evaluate_required_conditions(
         observability, fusion_res.conflict_codes, unc_res.uncertainty_score, quality_score, hazard_res
     )
-    
+
     # Construct DecisionTrace
-    trace = DecisionTrace(
-        event_id=event_code,
-        prediction={
-            "object_class": pred_res.object_class,
+    trace_dict = {
+        "event_id": event_code,
+        "detector_status": detection_res.detector_status,
+        "detected_objects": [obj.to_dict() for obj in detection_res.objects],
+        "primary_object": primary_obj.to_dict() if primary_obj else None,
+        "prediction": {
+            "object_class": primary_class,
             "category": pred_res.bag_category,
-            "confidence": pred_res.confidence,
+            "confidence": primary_conf,
             "probabilities": pred_res.probabilities,
             "model_version": pred_res.model_version
         },
-        hazard=hazard_res.to_dict(),
-        evidence={
+        "classification": {
+            "object_class": primary_class,
+            "waste_type": pred_res.waste_type,
+            "bag_category": pred_res.bag_category
+        },
+        "recommended_category": {
+            "code": pred_res.bag_category,
+            "waste_type": pred_res.waste_type
+        },
+        "hazard": hazard_res.to_dict(),
+        "evidence": {
             "image_quality": quality_score,
             "observability": observability,
             "barcode_support": fusion_res.barcode_support,
@@ -244,52 +242,43 @@ async def analyze_waste_event(
             "hazard_support": fusion_res.hazard_support,
             "missing_evidence": fusion_res.missing_evidence
         },
-        conflicts={
+        "conflicts": {
             "score": fusion_res.conflict_score,
             "detected": fusion_res.conflict_score > 0,
             "conflict_codes": fusion_res.conflict_codes
         },
-        uncertainty={
+        "uncertainty": {
             "entropy": unc_res.entropy,
             "uncertainty_score": unc_res.uncertainty_score,
             "calibration_status": unc_res.calibration_status
         },
-        risk={
+        "risk": {
             "score": max(fusion_res.conflict_score, unc_res.uncertainty_score, hazard_res.score if hazard_res.critical_hazard else 0.0),
             "hazard_risk": hazard_res.score,
             "anomaly_risk": anom_res.z_score / 5.0,
             "delay_risk": 0.1,
             "department_criticality": 0.8
         },
-        decision={
+        "decision": {
             "state": decision_state,
             "automation_allowed": automation_allowed,
             "reason_codes": [r["message"] for r in reasons],
             "action_recommended": "Auto Approve" if decision_state == "SAFE_TO_AUTOMATE" else ("Critical Hazard - Human Verification & Safe Handling Required" if hazard_res.critical_hazard else "Human Verification Required")
         },
-        counterfactual={"required": counterfactuals},
-        versions={"model_version": pred_res.model_version, "fusion_version": "V1", "policy_version": "V1", "risk_version": "V1", "trace_version": "V1"},
-        timestamps={"created_at": datetime.datetime.utcnow().isoformat()}
-    )
-    
-    # Inject classification & debug info payload
-    trace_dict = trace.to_dict()
-    trace_dict["classification"] = {
-        "object_class": pred_res.object_class,
-        "waste_type": pred_res.waste_type,
-        "bag_category": pred_res.bag_category
+        "counterfactual": {"required": counterfactuals},
+        "versions": {"model_version": pred_res.model_version, "fusion_version": "V1", "policy_version": "V1", "risk_version": "V1", "trace_version": "V1"},
+        "timestamps": {"created_at": datetime.datetime.utcnow().isoformat()},
+        "inference_debug": {
+            "image_received": size_bytes > 0 or payload.image_base64 is not None,
+            "filename": filename,
+            "size_bytes": size_bytes,
+            "model_version": pred_res.model_version,
+            "model_status": detection_res.model_status,
+            "primary_object": primary_class,
+            "confidence": primary_conf,
+            "mapped_category": pred_res.bag_category,
+            "hazard": hazard_res.hazard_type
+        }
     }
-    trace_dict["inference_debug"] = {
-        "image_received": size_bytes > 0 or payload.image_base64 is not None,
-        "filename": filename,
-        "size_bytes": size_bytes,
-        "dimensions": f"{width} x {height}",
-        "model_version": pred_res.model_version,
-        "model_status": "DEMO_SIMULATION_MODEL_V1.0",
-        "primary_object": pred_res.object_class,
-        "confidence": pred_res.confidence,
-        "mapped_category": pred_res.bag_category,
-        "hazard": hazard_res.hazard_type
-    }
-    
+
     return {"decision_state": decision_state, "automation_allowed": automation_allowed, "trace": trace_dict, "reasons": reasons}

@@ -1,0 +1,21 @@
+path: ../dataset
+train: images/train
+val: images/val
+test: images/test
+
+names:
+  0: SYRINGE
+  1: NEEDLE
+  2: SCALPEL
+  3: BLADE
+  4: LANCET
+  5: GAUZE
+  6: GLOVE
+  7: MASK
+  8: IV_TUBE
+  9: IV_SET
+  10: VIAL
+  11: MEDICINE_BOTTLE
+  12: PLASTIC_CONTAINER
+  13: BROKEN_GLASS
+  14: GENERAL_WASTE

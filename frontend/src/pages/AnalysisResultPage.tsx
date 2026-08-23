@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { ShieldCheck, ArrowLeft, AlertTriangle, Calculator, FileText, CheckCircle2, Bug } from 'lucide-react';
+import { ShieldCheck, ArrowLeft, AlertTriangle, Calculator, FileText, CheckCircle2, Bug, ScanEye } from 'lucide-react';
 import { apiService } from '../services/api';
 import { WhyNotPanel } from '../components/WhyNotPanel';
 import { CriticalHazardAlert } from '../components/CriticalHazardAlert';
 import { WasteCategoryBadge } from '../components/WasteCategoryBadge';
+import { BoundingBoxOverlay } from '../components/BoundingBoxOverlay';
 
 export const AnalysisResultPage: React.FC = () => {
   const { eventCode } = useParams<{ eventCode: string }>();
@@ -20,13 +21,25 @@ export const AnalysisResultPage: React.FC = () => {
         } else {
           setTrace({
             event_id: eventCode || 'DEMO-005',
-            prediction: { object_class: 'SYRINGE', category: 'WHITE', confidence: 0.97, model_version: 'DEMO_SIMULATION_MODEL_V1.0' },
+            detected_objects: [
+              {
+                object_id: 'obj-1',
+                class_name: 'SYRINGE',
+                display_name: 'Syringe',
+                confidence: 0.964,
+                bounding_box: { x1: 120, y1: 80, x2: 420, y2: 520 },
+                hazard_type: 'SHARP',
+                hazard_severity: 'CRITICAL'
+              }
+            ],
+            primary_object: { class_name: 'SYRINGE', confidence: 0.964 },
+            prediction: { object_class: 'SYRINGE', category: 'WHITE', confidence: 0.964, model_version: 'DEMO_SIMULATION_MODEL_V1.0' },
             classification: { object_class: 'SYRINGE', waste_type: 'SHARPS', bag_category: 'WHITE' },
-            hazard: { detected: true, hazard_type: 'SYRINGE', severity: 'CRITICAL', score: 0.97, critical: true, critical_hazard: true, automation_allowed: false, evidence_source: 'Hazard Gate', explanation: 'Critical sharp biomedical hazard detected.' },
+            hazard: { detected: true, hazard_type: 'SYRINGE', severity: 'CRITICAL', score: 0.964, critical: true, critical_hazard: true, automation_allowed: false, evidence_source: 'Hazard Gate', explanation: 'Critical sharp biomedical hazard detected.' },
             evidence: { image_quality: 0.91, observability: 'OBSERVABLE', barcode_support: 0.94, weight_support: 0.72 },
             conflicts: { score: 0.0, detected: false, conflict_codes: [] },
             uncertainty: { entropy: 0.08, uncertainty_score: 0.10, calibration_status: 'CALIBRATED' },
-            risk: { score: 0.97 },
+            risk: { score: 0.964 },
             decision: { state: 'HIGH_RISK_ESCALATION', automation_allowed: false, reason_codes: ['CRITICAL_SHARP_HAZARD', 'AUTOMATION_BLOCKED'], action_recommended: 'Human verification and safe biomedical waste handling workflow required.' },
             counterfactual: { required: ['HAZARD_CLEARANCE_AND_INDEPENDENT_VERIFICATION', 'SAFE_SHARPS_HANDLING_WORKFLOW_CONFIRMATION'] },
             timestamps: { created_at: new Date().toISOString() }
@@ -47,6 +60,17 @@ export const AnalysisResultPage: React.FC = () => {
   }
 
   const isCriticalHazard = trace?.hazard?.detected && trace?.hazard?.critical;
+  const detectedObjects = trace?.detected_objects || [
+    {
+      object_id: 'obj-1',
+      class_name: trace?.classification?.object_class || 'SYRINGE',
+      display_name: trace?.classification?.object_class || 'Syringe',
+      confidence: trace?.prediction?.confidence || 0.964,
+      bounding_box: { x1: 120, y1: 80, x2: 420, y2: 520 },
+      hazard_type: 'SHARP',
+      hazard_severity: isCriticalHazard ? 'CRITICAL' : 'LOW'
+    }
+  ];
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
@@ -76,9 +100,26 @@ export const AnalysisResultPage: React.FC = () => {
       {isCriticalHazard && (
         <CriticalHazardAlert 
           hazard={trace.hazard}
-          aiConfidence={trace?.prediction?.confidence || 0.97}
+          aiConfidence={trace?.prediction?.confidence || 0.964}
         />
       )}
+
+      <!-- Visual Bounding Box Overlay Section -->
+      <div className="glass-panel p-5 rounded-2xl border border-slate-800 space-y-3">
+        <div className="flex items-center justify-between">
+          <h3 className="font-bold text-sm uppercase tracking-wider text-slate-200 flex items-center gap-2 font-sans">
+            <ScanEye className="w-4 h-4 text-cyan-400" />
+            AI Computer Vision Bounding Box Canvas
+          </h3>
+          <span className="text-[10px] font-mono bg-cyan-500/10 text-cyan-300 px-2.5 py-0.5 rounded border border-cyan-500/20">
+            Detected Objects: {detectedObjects.length}
+          </span>
+        </div>
+
+        <BoundingBoxOverlay 
+          objects={detectedObjects}
+        />
+      </div>
 
       <!-- 3 Mandated Distinct Sections: A. Object Detection | B. Waste Disposal Category | C. Safety Assessment -->
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -92,7 +133,7 @@ export const AnalysisResultPage: React.FC = () => {
               {trace?.classification?.object_class || trace?.prediction?.object_class || 'SYRINGE'}
             </strong>
             <span className="text-[11px] text-slate-400 block">
-              Confidence: {((trace?.prediction?.confidence || 0.97) * 100).toFixed(1)}%
+              Confidence: {((trace?.prediction?.confidence || 0.964) * 100).toFixed(1)}%
             </span>
           </div>
         </div>
@@ -165,7 +206,7 @@ export const AnalysisResultPage: React.FC = () => {
       <!-- Why Not Panel -->
       <WhyNotPanel
         predictedCategory={trace?.classification?.bag_category || trace?.prediction?.category || 'WHITE'}
-        confidence={trace?.prediction?.confidence || 0.97}
+        confidence={trace?.prediction?.confidence || 0.964}
         decisionState={trace?.decision?.state || 'HIGH_RISK_ESCALATION'}
         reasons={trace?.decision?.reason_codes?.map((r: string) => ({
           status: isCriticalHazard ? 'FAIL' : 'PASS',
