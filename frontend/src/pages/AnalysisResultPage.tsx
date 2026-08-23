@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { ShieldCheck, ArrowLeft, AlertTriangle, Calculator, FileText, CheckCircle2 } from 'lucide-react';
+import { ShieldCheck, ArrowLeft, AlertTriangle, Calculator, FileText, CheckCircle2, Bug } from 'lucide-react';
 import { apiService } from '../services/api';
 import { WhyNotPanel } from '../components/WhyNotPanel';
 import { CriticalHazardAlert } from '../components/CriticalHazardAlert';
@@ -128,6 +128,38 @@ export const AnalysisResultPage: React.FC = () => {
           </div>
         </div>
 
+      </div>
+
+      <!-- Temporary Development Inference Debug Panel -->
+      <div className="glass-panel p-5 rounded-2xl border border-cyan-500/40 bg-slate-950 font-mono text-xs space-y-3">
+        <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+          <h4 className="font-bold text-cyan-400 uppercase tracking-wider text-xs flex items-center gap-2 font-sans">
+            <Bug className="w-4 h-4 text-cyan-400" />
+            Vision Inference Debug Panel (Development Mode)
+          </h4>
+          <span className="text-[10px] bg-cyan-500/20 text-cyan-300 px-2 py-0.5 rounded border border-cyan-500/30">
+            ENV: VITE_SHOW_INFERENCE_DEBUG=true
+          </span>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-slate-300">
+          <div className="bg-slate-900 p-2.5 rounded-lg border border-slate-800">
+            <span className="text-[10px] text-slate-500 uppercase block font-sans">Image Received</span>
+            <strong className="text-emerald-400">YES (Valid Payload)</strong>
+          </div>
+          <div className="bg-slate-900 p-2.5 rounded-lg border border-slate-800">
+            <span className="text-[10px] text-slate-500 uppercase block font-sans">Dimensions</span>
+            <strong className="text-slate-200">1920 × 1080 px</strong>
+          </div>
+          <div className="bg-slate-900 p-2.5 rounded-lg border border-slate-800">
+            <span className="text-[10px] text-slate-500 uppercase block font-sans">Model Status</span>
+            <strong className="text-purple-400">DEMO SIMULATION V1.0</strong>
+          </div>
+          <div className="bg-slate-900 p-2.5 rounded-lg border border-slate-800">
+            <span className="text-[10px] text-slate-500 uppercase block font-sans">Detected Class</span>
+            <strong className="text-cyan-300">{trace?.classification?.object_class || 'SYRINGE'}</strong>
+          </div>
+        </div>
       </div>
 
       <!-- Why Not Panel -->

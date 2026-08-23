@@ -73,6 +73,9 @@ export const SimulationModePage: React.FC = () => {
               <PlayCircle className="w-5 h-5 text-cyan-400" />
               SIH Grand Finale Guided Demo Mode
             </h2>
+            <span className="text-[9px] font-mono bg-purple-500/20 text-purple-300 px-2 py-0.5 rounded border border-purple-500/40 font-bold uppercase ml-2">
+              SIH SIMULATION MODE
+            </span>
           </div>
           <p className="text-xs text-slate-400 max-w-2xl">
             Walk judges through all 8 deterministic test scenarios (DEMO-001 to DEMO-008) proving uncertainty-aware abstention, syringe sharp hazard blocking, evidence conflict resolution, and SHA-256 audit chaining.
